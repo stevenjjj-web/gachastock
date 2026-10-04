@@ -1,0 +1,2809 @@
+{
+  "address": "7VAfdZyRRWCvLdPUpqYbeuSsvtQW4cp2PeVQvkAtBHHv",
+  "metadata": {
+    "name": "kaigu_gacha",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "GachaStock: a blind-box protocol for tokenized US stocks on Solana"
+  },
+  "instructions": [
+    {
+      "name": "buy_packs",
+      "docs": [
+        "Takes payment, creates the pack and requests randomness. The full amount stays pending",
+        "until the callback, so a timeout can be refunded in full."
+      ],
+      "discriminator": [
+        136,
+        30,
+        10,
+        209,
+        228,
+        139,
+        105,
+        138
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "The user or a relayer; pays rent and the randomness fee"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "user",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  99,
+                  104,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine.id",
+                "account": "Machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "season",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine.season",
+                "account": "Machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pack",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_usdc",
+          "writable": true
+        },
+        {
+          "name": "pool_token",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "oracle_queue",
+          "writable": true,
+          "address": "Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh"
+        },
+        {
+          "name": "program_identity",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  100,
+                  101,
+                  110,
+                  116,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrf_program",
+          "address": "Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz"
+        },
+        {
+          "name": "slot_hashes",
+          "address": "SysvarS1otHashes111111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "nonce",
+          "type": "u64"
+        },
+        {
+          "name": "count",
+          "type": "u8"
+        },
+        {
+          "name": "client_seed",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "callback_open",
+      "docs": [
+        "Draw callback. Callable only by the MagicBlock VRF identity; it only updates the ledger and moves no tokens."
+      ],
+      "discriminator": [
+        54,
+        7,
+        119,
+        98,
+        242,
+        113,
+        52,
+        0
+      ],
+      "accounts": [
+        {
+          "name": "vrf_program_identity",
+          "docs": [
+            "Scoped VRF identity PDA, bound to this program. Its presence as a signer proves",
+            "the callback was issued by the VRF program for this program."
+          ],
+          "signer": true
+        },
+        {
+          "name": "pack",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pack.owner",
+                "account": "Pack"
+              },
+              {
+                "kind": "account",
+                "path": "pack.nonce",
+                "account": "Pack"
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine",
+          "writable": true
+        },
+        {
+          "name": "season",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pack.season",
+                "account": "Pack"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pack.owner",
+                "account": "Pack"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "randomness",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "claim",
+      "docs": [
+        "Sends the locked USDC to the user minus the settlement fee, closes the Pack and returns its rent.",
+        "The frontend can append Jupiter swap instructions in the same transaction to turn the USDC into the pulled stock."
+      ],
+      "discriminator": [
+        62,
+        198,
+        214,
+        193,
+        213,
+        159,
+        108,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "pack"
+          ]
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "season",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pack.season",
+                "account": "Pack"
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine",
+          "writable": true
+        },
+        {
+          "name": "pack",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "pack.nonce",
+                "account": "Pack"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent_payer",
+          "writable": true,
+          "relations": [
+            "pack"
+          ]
+        },
+        {
+          "name": "user_usdc",
+          "writable": true
+        },
+        {
+          "name": "pool_token",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "coin_buy",
+      "docs": [
+        "Buys the machine coin with at most `usdc_in` (fee included). Before graduation this",
+        "trades on the bonding curve; the purchase that sells the last curve coin graduates the",
+        "machine: 4,000 USDC of the raise seeds its prize pool and the rest backs the trading",
+        "pool. After graduation it trades against that pool."
+      ],
+      "discriminator": [
+        137,
+        104,
+        233,
+        223,
+        113,
+        176,
+        7,
+        109
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  99,
+                  104,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine.id",
+                "account": "Machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "curve",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "coin_mint",
+          "writable": true
+        },
+        {
+          "name": "user_coin",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "coin_token_program"
+              },
+              {
+                "kind": "account",
+                "path": "coin_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "user_usdc",
+          "writable": true
+        },
+        {
+          "name": "pool_token",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "coin_token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "usdc_in",
+          "type": "u64"
+        },
+        {
+          "name": "min_coins_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "coin_sell",
+      "docs": [
+        "Sells machine coins. On the curve this pays the curve price; if the curve missed its",
+        "deadline the machine is marked failed and holders sell back along the curve with no",
+        "fee. After graduation it trades against the pool."
+      ],
+      "discriminator": [
+        195,
+        49,
+        32,
+        203,
+        70,
+        193,
+        125,
+        90
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  99,
+                  104,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine.id",
+                "account": "Machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "curve",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "coin_mint",
+          "writable": true
+        },
+        {
+          "name": "user_coin",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "coin_token_program"
+              },
+              {
+                "kind": "account",
+                "path": "coin_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "user_usdc",
+          "writable": true
+        },
+        {
+          "name": "pool_token",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "coin_token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "coins_in",
+          "type": "u64"
+        },
+        {
+          "name": "min_usdc_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "crank_buyback",
+      "docs": [
+        "Spends accrued buyback funds on the machine coin and burns what it buys. Anyone can",
+        "crank it; each call is capped so buybacks land in small pieces."
+      ],
+      "discriminator": [
+        37,
+        215,
+        1,
+        139,
+        147,
+        5,
+        99,
+        198
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "signer": true
+        },
+        {
+          "name": "machine",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  99,
+                  104,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine.id",
+                "account": "Machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "curve",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "min_coins_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_machine",
+      "docs": [
+        "Creates an official machine: open immediately, no machine coin, whole fee to the protocol."
+      ],
+      "discriminator": [
+        68,
+        24,
+        217,
+        254,
+        119,
+        181,
+        215,
+        57
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "season",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config.active_season",
+                "account": "Config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  99,
+                  104,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry.machine_count",
+                "account": "Registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_token",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  99,
+                  104,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "MachineArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "create_season",
+      "docs": [
+        "Publishes a new season and makes it the one new machines are created under.",
+        "Published seasons are immutable; existing machines keep their own season."
+      ],
+      "discriminator": [
+        38,
+        108,
+        29,
+        127,
+        60,
+        126,
+        101,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "season",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config.season_count",
+                "account": "Config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "SeasonArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "docs": [
+        "Creates the Config. Only the program upgrade authority (multisig) may call it."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "program",
+          "address": "7VAfdZyRRWCvLdPUpqYbeuSsvtQW4cp2PeVQvkAtBHHv"
+        },
+        {
+          "name": "program_data"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "treasury",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "launch_machine",
+      "docs": [
+        "Launchpad: anyone can launch a machine and its coin. The creator picks the name,",
+        "ticker, art and a stock basket from the whitelist; everything else comes from the",
+        "template and nothing can be changed afterwards. The coin sells on a bonding curve and",
+        "the machine opens once the curve sells out."
+      ],
+      "discriminator": [
+        250,
+        26,
+        214,
+        249,
+        91,
+        17,
+        146,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "season",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config.active_season",
+                "account": "Config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "registry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  103,
+                  105,
+                  115,
+                  116,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  99,
+                  104,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "registry.machine_count",
+                "account": "Registry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "curve",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "coin_mint",
+          "docs": [
+            "The machine coin: a classic SPL token whose only mint authority is the machine."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_token",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  99,
+                  104,
+                  105,
+                  110,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator_usdc",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "coin_token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "MachineArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "refund_timeout",
+      "docs": [
+        "If the randomness callback times out, the pack owner gets the full payment back. Not affected by pause."
+      ],
+      "discriminator": [
+        142,
+        147,
+        135,
+        70,
+        231,
+        198,
+        23,
+        207
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "pack"
+          ]
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "season",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pack.season",
+                "account": "Pack"
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine",
+          "writable": true
+        },
+        {
+          "name": "pack",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  99,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "pack.nonce",
+                "account": "Pack"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent_payer",
+          "writable": true,
+          "relations": [
+            "pack"
+          ]
+        },
+        {
+          "name": "user_usdc",
+          "writable": true
+        },
+        {
+          "name": "pool_token",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "set_paused",
+      "docs": [
+        "Pauses new purchases, launches and coin buys; claims, refunds and coin sells keep working."
+      ],
+      "discriminator": [
+        91,
+        60,
+        125,
+        192,
+        176,
+        225,
+        166,
+        218
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "paused",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_fees",
+      "docs": [
+        "Pays a machine's accrued fees to their fixed destinations: the protocol's share to the",
+        "treasury and the creator's share to the creator. Anyone can crank it. No instruction",
+        "can touch the prize pool, locked prizes, pending payments or the coin market's USDC."
+      ],
+      "discriminator": [
+        198,
+        212,
+        171,
+        109,
+        144,
+        215,
+        174,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  99,
+                  104,
+                  105,
+                  110,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine.id",
+                "account": "Machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_token",
+          "writable": true
+        },
+        {
+          "name": "treasury_usdc",
+          "writable": true
+        },
+        {
+          "name": "creator_usdc",
+          "writable": true
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "Curve",
+      "discriminator": [
+        191,
+        180,
+        249,
+        66,
+        180,
+        71,
+        51,
+        182
+      ]
+    },
+    {
+      "name": "Machine",
+      "discriminator": [
+        25,
+        102,
+        22,
+        13,
+        58,
+        243,
+        138,
+        79
+      ]
+    },
+    {
+      "name": "Pack",
+      "discriminator": [
+        244,
+        192,
+        97,
+        212,
+        134,
+        91,
+        198,
+        200
+      ]
+    },
+    {
+      "name": "Player",
+      "discriminator": [
+        205,
+        222,
+        112,
+        7,
+        165,
+        155,
+        206,
+        218
+      ]
+    },
+    {
+      "name": "Registry",
+      "discriminator": [
+        47,
+        174,
+        110,
+        246,
+        184,
+        182,
+        252,
+        218
+      ]
+    },
+    {
+      "name": "Season",
+      "discriminator": [
+        76,
+        67,
+        93,
+        156,
+        180,
+        157,
+        248,
+        47
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "BuybackBurned",
+      "discriminator": [
+        186,
+        84,
+        241,
+        202,
+        152,
+        185,
+        0,
+        115
+      ]
+    },
+    {
+      "name": "CoinTraded",
+      "discriminator": [
+        131,
+        30,
+        68,
+        81,
+        134,
+        241,
+        239,
+        220
+      ]
+    },
+    {
+      "name": "MachineCreated",
+      "discriminator": [
+        159,
+        82,
+        7,
+        32,
+        232,
+        69,
+        34,
+        213
+      ]
+    },
+    {
+      "name": "MachineGraduated",
+      "discriminator": [
+        119,
+        144,
+        172,
+        235,
+        255,
+        64,
+        120,
+        124
+      ]
+    },
+    {
+      "name": "PackClaimed",
+      "discriminator": [
+        12,
+        57,
+        12,
+        54,
+        24,
+        145,
+        203,
+        38
+      ]
+    },
+    {
+      "name": "PackOpened",
+      "discriminator": [
+        107,
+        111,
+        64,
+        235,
+        140,
+        166,
+        46,
+        201
+      ]
+    },
+    {
+      "name": "PackRefunded",
+      "discriminator": [
+        8,
+        128,
+        247,
+        205,
+        55,
+        245,
+        103,
+        87
+      ]
+    },
+    {
+      "name": "PacksBought",
+      "discriminator": [
+        44,
+        243,
+        223,
+        11,
+        90,
+        23,
+        184,
+        47
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Paused",
+      "msg": "New purchases are paused"
+    },
+    {
+      "code": 6001,
+      "name": "BadCount",
+      "msg": "Pull count must be between 1 and 10"
+    },
+    {
+      "code": 6002,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6003,
+      "name": "BadStatus",
+      "msg": "Pack is in the wrong status"
+    },
+    {
+      "code": 6004,
+      "name": "SeasonMismatch",
+      "msg": "Season mismatch"
+    },
+    {
+      "code": 6005,
+      "name": "Insolvent",
+      "msg": "Prize pool or token balance is insufficient"
+    },
+    {
+      "code": 6006,
+      "name": "TooEarly",
+      "msg": "Timeout has not elapsed yet"
+    },
+    {
+      "code": 6007,
+      "name": "BadSeason",
+      "msg": "Invalid season parameters"
+    },
+    {
+      "code": 6008,
+      "name": "BadProbSum",
+      "msg": "Probabilities must sum to 1,000,000 ppm"
+    },
+    {
+      "code": 6009,
+      "name": "BudgetExceeded",
+      "msg": "Expected fixed-tier payout must be below the per-pack prize pool inflow"
+    },
+    {
+      "code": 6010,
+      "name": "Unauthorized",
+      "msg": "Unauthorized"
+    },
+    {
+      "code": 6011,
+      "name": "NothingToWithdraw",
+      "msg": "Nothing to withdraw"
+    },
+    {
+      "code": 6012,
+      "name": "BadMachine",
+      "msg": "Invalid machine parameters"
+    },
+    {
+      "code": 6013,
+      "name": "NotLive",
+      "msg": "This machine is not open"
+    },
+    {
+      "code": 6014,
+      "name": "MarketClosed",
+      "msg": "This machine coin is not trading"
+    },
+    {
+      "code": 6015,
+      "name": "Slippage",
+      "msg": "Price moved past the slippage limit"
+    },
+    {
+      "code": 6016,
+      "name": "CreatorCap",
+      "msg": "The creator's allocation on the curve is used up"
+    },
+    {
+      "code": 6017,
+      "name": "EarlyCap",
+      "msg": "Purchase is above the limit for the first blocks after launch"
+    },
+    {
+      "code": 6018,
+      "name": "TooSmall",
+      "msg": "Trade amount is too small"
+    }
+  ],
+  "types": [
+    {
+      "name": "BuybackBurned",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "machine",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc",
+            "type": "u64"
+          },
+          {
+            "name": "coins",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CoinTraded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "machine",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "is_buy",
+            "type": "bool"
+          },
+          {
+            "name": "usdc",
+            "type": "u64"
+          },
+          {
+            "name": "coins",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "reserved",
+            "docs": [
+              "Unused; kept so the account layout stays stable across upgrades."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "active_season",
+            "type": "u16"
+          },
+          {
+            "name": "season_count",
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Curve",
+      "docs": [
+        "Coin-side state of a launchpad machine's market."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "machine",
+            "type": "pubkey"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
+          },
+          {
+            "name": "launch_slot",
+            "type": "u64"
+          },
+          {
+            "name": "sold",
+            "docs": [
+              "Coins sold by the curve and still outstanding (pre-graduation)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "creator_bought",
+            "type": "u64"
+          },
+          {
+            "name": "pool_coins",
+            "docs": [
+              "Coin side of the post-graduation pool. These coins are minted only when bought."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "burned",
+            "docs": [
+              "Coins removed for good by buybacks."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bought_back",
+            "docs": [
+              "USDC spent on buybacks so far."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "graduated_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Machine",
+      "docs": [
+        "One gacha machine: its own theme, stock basket and prize pool, with its own ledger.",
+        "The machine's USDC token account must always hold at least the sum of the ledger fields."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "kind",
+            "type": {
+              "defined": {
+                "name": "MachineKind"
+              }
+            }
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "MachineStatus"
+              }
+            }
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "season",
+            "type": "u16"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "name": "theme",
+            "docs": [
+              "Art / colour preset; display only."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "basket",
+            "docs": [
+              "Indices into the season's stock whitelist."
+            ],
+            "type": "bytes"
+          },
+          {
+            "name": "pool_token",
+            "type": "pubkey"
+          },
+          {
+            "name": "coin_mint",
+            "docs": [
+              "Machine coin mint; default for official machines."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "pending",
+            "type": "u64"
+          },
+          {
+            "name": "prize_pool",
+            "type": "u64"
+          },
+          {
+            "name": "locked",
+            "type": "u64"
+          },
+          {
+            "name": "protocol_fees",
+            "type": "u64"
+          },
+          {
+            "name": "buyback_accrued",
+            "type": "u64"
+          },
+          {
+            "name": "creator_accrued",
+            "type": "u64"
+          },
+          {
+            "name": "market_usdc",
+            "docs": [
+              "USDC backing the machine coin: the curve reserve before graduation, the pool's USDC side after."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_pulls",
+            "type": "u64"
+          },
+          {
+            "name": "total_volume",
+            "type": "u64"
+          },
+          {
+            "name": "jackpots_won",
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MachineArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "name": "theme",
+            "type": "u8"
+          },
+          {
+            "name": "basket",
+            "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MachineCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "machine",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "coin_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "launchpad",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MachineGraduated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "machine",
+            "type": "pubkey"
+          },
+          {
+            "name": "seed",
+            "type": "u64"
+          },
+          {
+            "name": "pool_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "pool_coins",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MachineKind",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Official"
+          },
+          {
+            "name": "Launchpad"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MachineStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Curve"
+          },
+          {
+            "name": "Live"
+          },
+          {
+            "name": "Failed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Pack",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "machine",
+            "type": "pubkey"
+          },
+          {
+            "name": "season",
+            "type": "u16"
+          },
+          {
+            "name": "count",
+            "type": "u8"
+          },
+          {
+            "name": "paid",
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "PackStatus"
+              }
+            }
+          },
+          {
+            "name": "request_slot",
+            "type": "u64"
+          },
+          {
+            "name": "locked_amount",
+            "type": "u64"
+          },
+          {
+            "name": "results",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "PullResult"
+                  }
+                },
+                10
+              ]
+            }
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PackClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pack",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "settle_fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PackOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pack",
+            "type": "pubkey"
+          },
+          {
+            "name": "machine",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "count",
+            "type": "u8"
+          },
+          {
+            "name": "results",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "PullResult"
+                  }
+                },
+                10
+              ]
+            }
+          },
+          {
+            "name": "locked_amount",
+            "type": "u64"
+          },
+          {
+            "name": "prize_pool_after",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PackRefunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pack",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PackStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Pending"
+          },
+          {
+            "name": "Revealed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PacksBought",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pack",
+            "type": "pubkey"
+          },
+          {
+            "name": "machine",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "count",
+            "type": "u8"
+          },
+          {
+            "name": "paid",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Player",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "dry_streak",
+            "type": "u16"
+          },
+          {
+            "name": "total_pulls",
+            "type": "u64"
+          },
+          {
+            "name": "total_spent",
+            "type": "u64"
+          },
+          {
+            "name": "total_won",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PullResult",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tier",
+            "type": "u8"
+          },
+          {
+            "name": "value",
+            "type": "u64"
+          },
+          {
+            "name": "stock_idx",
+            "docs": [
+              "Index into the season's stock whitelist"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Registry",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "machine_count",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Season",
+      "docs": [
+        "Economic parameters shared by machines. Immutable once published; new parameters need a",
+        "new season, and every machine keeps the season it was created under."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u16"
+          },
+          {
+            "name": "pack_price",
+            "type": "u64"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "pool_bps",
+            "type": "u16"
+          },
+          {
+            "name": "settle_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "cap_bps",
+            "type": "u16"
+          },
+          {
+            "name": "jackpot_share_bps",
+            "type": "u16"
+          },
+          {
+            "name": "pity",
+            "type": "u16"
+          },
+          {
+            "name": "timeout_slots",
+            "type": "u64"
+          },
+          {
+            "name": "jackpot_min_pool",
+            "docs": [
+              "The jackpot only pays while the prize pool is at least this large; below it a jackpot",
+              "roll is treated as the best fixed tier the pool can afford."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "tiers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "Tier"
+                  }
+                },
+                7
+              ]
+            }
+          },
+          {
+            "name": "whitelist",
+            "docs": [
+              "Stock mints a machine may put in its basket."
+            ],
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SeasonArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pack_price",
+            "type": "u64"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "pool_bps",
+            "type": "u16"
+          },
+          {
+            "name": "settle_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "cap_bps",
+            "type": "u16"
+          },
+          {
+            "name": "jackpot_share_bps",
+            "type": "u16"
+          },
+          {
+            "name": "pity",
+            "type": "u16"
+          },
+          {
+            "name": "timeout_slots",
+            "type": "u64"
+          },
+          {
+            "name": "jackpot_min_pool",
+            "type": "u64"
+          },
+          {
+            "name": "tiers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "Tier"
+                  }
+                },
+                7
+              ]
+            }
+          },
+          {
+            "name": "whitelist",
+            "type": {
+              "vec": "pubkey"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Tier",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "prob_ppm",
+            "type": "u32"
+          },
+          {
+            "name": "bonus",
+            "docs": [
+              "Prize-pool payout on top of the floor (USDC base units). Ignored for the jackpot tier."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

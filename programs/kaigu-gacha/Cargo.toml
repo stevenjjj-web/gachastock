@@ -1,0 +1,25 @@
+[package]
+name = "kaigu-gacha"
+version = "0.1.0"
+description = "GachaStock: a blind-box protocol for tokenized US stocks on Solana"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "kaigu_gacha"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "=0.31.1", features = ["init-if-needed"] }
+anchor-spl = "=0.31.1"
+ephemeral-vrf-sdk = { version = "0.17.3", features = ["anchor-compat"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "allow" }

@@ -1,0 +1,10 @@
+target/
+node_modules/
+.next/
+.env*
+!.env.example
+build.log
+.DS_Store
+test-ledger/
+.keys/
+tests/shots/
