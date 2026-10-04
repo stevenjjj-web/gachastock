@@ -8,7 +8,7 @@ import { shares, usd } from "@/lib/format";
 import { useGacha } from "@/lib/gacha-context";
 import { useI18n } from "@/lib/i18n";
 import type { Key } from "@/lib/locales/en";
-import type { Pack } from "@/lib/types";
+import type { MachineInfo, Pack } from "@/lib/types";
 import { BullHead, PackArt, StockCoin } from "./art";
 import { coins } from "./CoinPanel";
 
@@ -36,7 +36,8 @@ export function InventoryView() {
   const pnl = g.totalWon - g.totalSpent;
   const empty = g.totalSpent === 0 && !unclaimed.length && !pending.length && !held.length && !created.length;
 
-  const packName = (p: Pack) => g.machines.find((m) => m.id === p.machineId)?.name ?? "";
+  const machineOf = (p: Pack): MachineInfo | undefined => g.machines.find((m) => m.id === p.machineId);
+  const packName = (p: Pack) => machineOf(p)?.name ?? "";
 
   const run = async (key: string, fn: () => Promise<void>, fallback: Key = "err.action") => {
     setBusy(key);
@@ -93,7 +94,15 @@ export function InventoryView() {
                       </span>
                       <div className="mr-auto">
                         <p className="font-mono text-lg font-bold">${usd(p.lockedAmount)}</p>
-                        <p className="text-sm text-subtle">{t("inv.packInfo", { name: packName(p), n: p.count })}</p>
+                        <p className="text-sm text-subtle">
+                          {t("inv.packInfo", { name: packName(p), n: p.count })}
+                          {p.coins > 0 && (
+                            <span className="font-mono text-accent">
+                              {" "}
+                              · +{coins(p.coins)} {machineOf(p)?.symbol}
+                            </span>
+                          )}
+                        </p>
                       </div>
                       <button className="btn btn-sm" disabled={!!busy} onClick={() => run(p.id + "stock", () => g.claim(p.id, "stock"), "err.claim")}>
                         {busy === p.id + "stock" ? t("claim.swapping") : t("claim.stock")}
@@ -138,7 +147,7 @@ export function InventoryView() {
                       <p className="truncate font-mono font-bold">
                         {coins(m.coin!.held)} {m.symbol}
                       </p>
-                      <p className="text-sm text-subtle">{t("inv.coinValue", { value: usd(quoteSell({ status: m.status, coin: m.coin! }, m.coin!.held)) })}</p>
+                      <p className="text-sm text-subtle">{t("inv.coinValue", { value: usd(quoteSell(m.coin!, m.coin!.held)) })}</p>
                     </div>
                     <span className="label text-accent">{t("inv.go")} →</span>
                   </Link>
@@ -158,7 +167,7 @@ export function InventoryView() {
                         {m.name}
                       </Link>
                       <p className="text-sm text-subtle">
-                        {t(`phase.${m.status}` as Key)} · {t("inv.fees", { amount: usd(m.creatorAccrued) })}
+                        {t("stat.pulls")}: {m.totalPulls.toLocaleString("en-US")} · {t("inv.fees", { amount: usd(m.creatorAccrued) })}
                       </p>
                     </div>
                     <button className="btn btn-sm" disabled={!!busy || m.creatorAccrued === 0} onClick={() => run(m.id + "fees", () => g.withdrawFees(m.id))}>

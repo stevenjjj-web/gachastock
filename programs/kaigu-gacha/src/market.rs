@@ -1,12 +1,12 @@
 //! Machine coin market: pure math for the bonding curve and the post-graduation pool.
 //!
-//! Before graduation the coin sells on a constant-product curve with virtual reserves. Once
-//! the whole curve allocation is sold the machine graduates: most of the raise seeds the
-//! machine's prize pool and the rest becomes the USDC side of a constant-product pool whose
-//! coin side is priced at the curve's final price. Everything rounds in the market's favour.
+//! The coin starts on a constant-product curve with virtual reserves. Once the whole curve
+//! allocation is sold the coin graduates: the entire raise becomes the USDC side of a
+//! constant-product pool whose coin side is priced at the curve's final price. Nothing from
+//! the raise goes anywhere else. Everything rounds in the market's favour.
 
 use crate::draw::bps;
-use crate::state::GachaError;
+use crate::state::{Curve, GachaError};
 use anchor_lang::prelude::*;
 
 pub const COIN_DECIMALS: u8 = 6;
@@ -18,18 +18,14 @@ pub const VIRTUAL_COINS: u64 = 1_000_000_000 * COIN;
 pub const VIRTUAL_USDC: u64 = 1_250 * USDC;
 /// Coins the curve sells before graduation.
 pub const CURVE_SUPPLY: u64 = 800_000_000 * COIN;
-/// Of the raise, this much seeds the machine's prize pool; the rest backs the trading pool.
-pub const SEED_USDC: u64 = 4_000 * USDC;
 
 pub const TRADE_FEE_BPS: u16 = 100;
 pub const LAUNCH_FEE: u64 = 10 * USDC;
-pub const SALE_SECS: i64 = 7 * 24 * 3600;
 /// For this many slots after launch a single purchase is capped, to blunt sniping.
 pub const EARLY_SLOTS: u64 = 150;
 pub const EARLY_MAX_USDC: u64 = 100 * USDC;
 /// The creator may hold at most this much of the curve allocation.
 pub const CREATOR_MAX_COINS: u64 = CURVE_SUPPLY / 20;
-pub const MAX_BUYBACK_PER_CRANK: u64 = 25 * USDC;
 
 fn k() -> u128 {
     (VIRTUAL_COINS as u128) * (VIRTUAL_USDC as u128)
@@ -37,6 +33,21 @@ fn k() -> u128 {
 
 fn ceil_div(a: u128, b: u128) -> u128 {
     a.div_ceil(b)
+}
+
+/// Coins the curve gives for adding `net` USDC to its reserve, and the USDC it actually
+/// takes. If `net` would buy more than the curve has left, only the remainder is sold.
+fn curve_fill(reserve: u64, sold: u64, net: u64) -> (u64, u64) {
+    let vu = (VIRTUAL_USDC as u128) + (reserve as u128);
+    let vt = (VIRTUAL_COINS - sold) as u128;
+    let new_vt = ceil_div(k(), vu + net as u128);
+    let out = vt.saturating_sub(new_vt) as u64;
+    let left = CURVE_SUPPLY - sold;
+    if out < left {
+        return (out, net);
+    }
+    let needed = ceil_div(k(), vt - left as u128).saturating_sub(vu) as u64;
+    (left, needed)
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -51,26 +62,18 @@ pub struct CurveBuy {
 /// the curve has left, only the remainder is sold and only that much is charged.
 pub fn curve_buy(reserve: u64, sold: u64, budget: u64) -> Result<CurveBuy> {
     require!(sold < CURVE_SUPPLY, GachaError::MarketClosed);
-    let vu = (VIRTUAL_USDC as u128) + (reserve as u128);
-    let vt = (VIRTUAL_COINS - sold) as u128;
     // fee is charged on top of the net amount: budget = net + net * fee_bps / 10_000
     let net = ((budget as u128) * 10_000 / (10_000 + TRADE_FEE_BPS as u128)) as u64;
-    let new_vt = ceil_div(k(), vu + net as u128);
-    let out = vt.saturating_sub(new_vt) as u64;
-    let left = CURVE_SUPPLY - sold;
-    if out < left {
-        return Ok(CurveBuy {
-            coins_out: out,
-            net,
-            fee: budget - net,
-        });
-    }
-    // Fill exactly what is left and charge only for that.
-    let needed = ceil_div(k(), vt - left as u128).saturating_sub(vu) as u64;
+    let (coins_out, used) = curve_fill(reserve, sold, net);
+    let fee = if used == net {
+        budget - net
+    } else {
+        (bps(used, TRADE_FEE_BPS) + 1).min(budget.saturating_sub(used))
+    };
     Ok(CurveBuy {
-        coins_out: left,
-        net: needed,
-        fee: (bps(needed, TRADE_FEE_BPS) + 1).min(budget.saturating_sub(needed)),
+        coins_out,
+        net: used,
+        fee,
     })
 }
 
@@ -83,17 +86,23 @@ pub fn curve_sell(reserve: u64, sold: u64, coins_in: u64) -> Result<u64> {
     Ok((vu.saturating_sub(new_vu) as u64).min(reserve))
 }
 
-/// Split of the curve reserve at graduation: (prize pool seed, pool USDC, pool coins).
-/// The pool's coin side is sized so its price equals the curve's final price.
-pub fn graduation_split(reserve: u64) -> Result<(u64, u64, u64)> {
-    let pool_usdc = reserve
-        .checked_sub(SEED_USDC)
-        .ok_or(GachaError::Insolvent)?;
+/// Coin side of the pool at graduation. The whole reserve becomes the pool's USDC side and
+/// the coin side is sized so the pool opens at the curve's final price.
+pub fn graduation_pool_coins(reserve: u64) -> Result<u64> {
     let vu = (VIRTUAL_USDC as u128) + (reserve as u128);
     let vt = (VIRTUAL_COINS - CURVE_SUPPLY) as u128;
-    let pool_coins = ((pool_usdc as u128) * vt / vu) as u64;
-    require!(pool_usdc > 0 && pool_coins > 0, GachaError::Insolvent);
-    Ok((SEED_USDC, pool_usdc, pool_coins))
+    let pool_coins = ((reserve as u128) * vt / vu) as u64;
+    require!(reserve > 0 && pool_coins > 0, GachaError::Insolvent);
+    Ok(pool_coins)
+}
+
+/// Switches a sold-out curve over to the pool.
+pub fn graduate(market_usdc: u64, c: &mut Curve, now: i64) -> Result<()> {
+    require!(!c.graduated && c.sold == CURVE_SUPPLY, GachaError::MarketClosed);
+    c.pool_coins = graduation_pool_coins(market_usdc)?;
+    c.graduated = true;
+    c.graduated_at = now;
+    Ok(())
 }
 
 /// Coins bought from the pool for `usdc_in` (net of any fee).
@@ -110,22 +119,43 @@ pub fn pool_sell(pool_usdc: u64, pool_coins: u64, coins_in: u64) -> u64 {
     (pool_usdc as u128).saturating_sub(new_usdc) as u64
 }
 
+/// Spends exactly `usdc` on the coin with no fee, wherever it trades right now, and returns
+/// the coins bought. A buy that sells the last curve coin graduates the coin and spends the
+/// rest in the pool. This is how a pull buys the coin for its player.
+pub fn buy_exact(market_usdc: &mut u64, c: &mut Curve, usdc: u64, now: i64) -> Result<u64> {
+    let mut left = usdc;
+    let mut coins = 0u64;
+    if !c.graduated {
+        let (out, used) = curve_fill(*market_usdc, c.sold, left);
+        *market_usdc = market_usdc.checked_add(used).ok_or(GachaError::Overflow)?;
+        c.sold += out;
+        coins = out;
+        left -= used;
+        if c.sold < CURVE_SUPPLY {
+            return Ok(coins);
+        }
+        graduate(*market_usdc, c, now)?;
+    }
+    let out = pool_buy(*market_usdc, c.pool_coins, left);
+    *market_usdc = market_usdc.checked_add(left).ok_or(GachaError::Overflow)?;
+    c.pool_coins -= out;
+    coins.checked_add(out).ok_or(GachaError::Overflow.into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn selling_the_whole_curve_raises_5000_usdc() {
+    fn selling_the_whole_curve_raises_5000_usdc_and_all_of_it_backs_the_pool() {
         let b = curve_buy(0, 0, u64::MAX / 20_000).unwrap();
         assert_eq!(b.coins_out, CURVE_SUPPLY);
         assert_eq!(b.net, 5_000 * USDC);
-        let (seed, pool_usdc, pool_coins) = graduation_split(b.net).unwrap();
-        assert_eq!(seed, 4_000 * USDC);
-        assert_eq!(pool_usdc, 1_000 * USDC);
-        assert_eq!(pool_coins, 32_000_000 * COIN);
+        let pool_coins = graduation_pool_coins(b.net).unwrap();
+        assert_eq!(pool_coins, 160_000_000 * COIN);
         // Pool opens at the curve's final price: 6,250 USDC / 200M coins
         assert_eq!(
-            (pool_usdc as u128) * 200_000_000,
+            (b.net as u128) * 200_000_000,
             (pool_coins as u128 / COIN as u128) * 6_250 * USDC as u128
         );
     }
@@ -175,7 +205,7 @@ mod tests {
 
     #[test]
     fn pool_trades_round_in_the_pools_favour() {
-        let (mut u, mut c) = (1_000 * USDC, 32_000_000 * COIN);
+        let (mut u, mut c) = (5_000 * USDC, 160_000_000 * COIN);
         let k0 = u as u128 * c as u128;
         let out = pool_buy(u, c, 50 * USDC);
         u += 50 * USDC;
@@ -186,10 +216,41 @@ mod tests {
         u -= back;
         c += out;
         assert!(u as u128 * c as u128 >= k0);
-        // A buyback raises the price for everyone left
-        let before = u as u128 * COIN as u128 / c as u128;
-        let burned = pool_buy(u, c, 25 * USDC);
-        let after = (u + 25 * USDC) as u128 * COIN as u128 / (c - burned) as u128;
-        assert!(after > before);
+    }
+
+    /// Pulls buy the coin 0.30 USDC at a time. The curve graduates after 16,667 of them, the
+    /// whole 5,000 USDC is still there, and the price never steps down along the way.
+    #[test]
+    fn rebates_walk_the_curve_and_graduate_it() {
+        let mut c = Curve::default();
+        let mut usdc = 0u64;
+        let rebate = 300_000u64;
+        let price = |usdc: u64, c: &Curve| -> u128 {
+            if c.graduated {
+                usdc as u128 * 1_000_000_000_000 / c.pool_coins as u128
+            } else {
+                (VIRTUAL_USDC + usdc) as u128 * 1_000_000_000_000 / (VIRTUAL_COINS - c.sold) as u128
+            }
+        };
+        let (mut total, mut graduated_at, mut last) = (0u64, 0u32, price(usdc, &c));
+        for i in 1..=20_000u32 {
+            let coins = buy_exact(&mut usdc, &mut c, rebate, i as i64).unwrap();
+            assert!(coins > 0);
+            total += coins;
+            assert_eq!(usdc, rebate * i as u64);
+            let p = price(usdc, &c);
+            assert!(p >= last, "price fell at pull {i}");
+            last = p;
+            if c.graduated && graduated_at == 0 {
+                graduated_at = i;
+                assert_eq!(c.graduated_at, i as i64);
+            }
+        }
+        assert_eq!(graduated_at, 16_667);
+        assert_eq!(c.sold, CURVE_SUPPLY);
+        // 800M from the curve plus whatever left the 160M pool, give or take rounding dust
+        assert!((total + c.pool_coins).abs_diff(960_000_000 * COIN) < COIN);
+        // Everyone selling everything back to the pool can never take more than is in it
+        assert!(pool_sell(usdc, c.pool_coins, total) < usdc);
     }
 }

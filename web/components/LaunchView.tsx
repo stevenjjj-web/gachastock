@@ -52,9 +52,9 @@ export function LaunchView() {
 
   const steps = [
     t("launch.s1", { fee }),
-    t("launch.s2", { target: usd(MARKET.target, 0), seed: usd(MARKET.seed, 0) }),
-    t("launch.s3", { pct: FEE_SPLIT.creatorBps / 100, buyback: FEE_SPLIT.buybackBps / 100 }),
-    t("launch.s4", { days: MARKET.saleDays }),
+    t("launch.s2", { rebate: FEE_SPLIT.rebateBps / 100 }),
+    t("launch.s3", { pct: FEE_SPLIT.creatorBps / 100 }),
+    t("launch.s4", { target: usd(MARKET.target, 0) }),
   ];
 
   return (

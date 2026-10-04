@@ -1,8 +1,9 @@
 // Browser end-to-end test of chain mode on devnet. Injects a Wallet Standard test wallet
 // backed by .keys/e2e.json, then connects, uses the faucet, opens packs and claims.
 // Usage: node browser-e2e.mjs [--launch] [--inventory] [http://localhost:3210]
-//   --launch also launches a machine, buys out its curve from a second wallet, plays it,
-//   cranks a buyback, sells the coin and withdraws the creator's fees.
+//   --launch also launches a machine, plays it right away (each pull buys its coin for the
+//   player), buys out its curve from a second wallet, sells the coin and withdraws the
+//   creator's fees.
 // The dev server must be running with web/.env.local pointing at devnet.
 
 import anchor from "@coral-xyz/anchor";
@@ -75,14 +76,16 @@ async function buyOutCurve(machineId) {
       coinMint,
       userCoin: getAssociatedTokenAddressSync(coinMint, buyer.publicKey),
       userUsdc: buyerUsdc,
-      poolToken: pda(Buffer.from("machine_pool"), machine.toBuffer()),
+      vault: pda(Buffer.from("prize_vault")),
+      vaultToken: pda(Buffer.from("prize_vault_token")),
       usdcMint: mint,
       tokenProgram: TOKEN_PROGRAM_ID,
       coinTokenProgram: TOKEN_PROGRAM_ID,
     })
     .rpc();
   const m = await program.account.machine.fetch(machine);
-  console.log("curve bought out:", sig.slice(0, 16) + "…", "status", Object.keys(m.status)[0], "prize pool", m.prizePool.toNumber() / 1e6, "pool USDC", m.marketUsdc.toNumber() / 1e6);
+  const c = await program.account.curve.fetch(curve);
+  console.log("curve bought out:", sig.slice(0, 16) + "…", "graduated", c.graduated, "pool USDC", m.marketUsdc.toNumber() / 1e6, "pool coins", c.poolCoins.toNumber() / 1e6);
 }
 
 const browser = await puppeteer.launch({ executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headless: "new" });
@@ -187,7 +190,7 @@ console.log("clicked faucet:", await click("+ Test USDC"));
 await until(async () => (await usdc()) >= before + 500);
 console.log("USDC", before, "→", await usdc());
 
-step("open a single pack from the always-on pool");
+step("open a single pack on an official machine");
 before = await usdc();
 await bodyHas("Open · 10 USDC", 20_000);
 await click("Open · 10 USDC");
@@ -231,9 +234,34 @@ if (WITH_LAUNCH && !INVENTORY_ONLY) {
   before = await usdc();
   console.log("clicked launch:", await click("Launch for 10 USDC"));
   await bodyHas(`$${symbol}`, 60_000, "machine page");
-  await bodyHas("Opens when the coin sells out", 30_000, "curve state");
+  await bodyHas("On the curve", 30_000, "coin on its curve");
+  await bodyHas("Open · 10 USDC", 30_000, "open for pulls right away");
   const machineId = new URL(page.url()).searchParams.get("m");
   console.log("machine", machineId, "launched; USDC", before, "→", await usdc(), "(launch fee 10)");
+  const coinPanel = () => page.evaluate(() => [...document.querySelectorAll("section")].find((s) => s.innerText.toLowerCase().startsWith("machine coin"))?.innerText.replace(/\n+/g, " | "));
+
+  step("open ten packs on the new machine: every pull buys its coin for the player");
+  before = await usdc();
+  await page.click("input[role=switch]");
+  await bodyHas("Open · 100 USDC", 5_000);
+  await click("Open · 100 USDC");
+  t0 = Date.now();
+  await stageHas("Flip all", 120_000);
+  console.log(`revealed in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  await click("Flip all");
+  await stageHas("Claim USDC", 10_000);
+  await stageHas("bought for you by this pack", 10_000);
+  await sleep(1200);
+  console.log(await page.evaluate(() => document.querySelector("[data-stage]").innerText.match(/Total pulled[^\n]*\n?[^\n]*\n?[^\n]*/)?.[0].replace(/\n+/g, " | ")));
+  await page.screenshot({ path: `${SHOTS}/chain-rebate.png` });
+  await click("Claim USDC");
+  await stageHas("USDC delivered", 60_000);
+  console.log("USDC", before, "→", await usdc());
+  await click("Done");
+  await sleep(800);
+  await bodyHas("Bought for players", 20_000);
+  await until(async () => !/You hold \| 0(\.00)? /.test((await coinPanel()) ?? "You hold | 0 "), 40_000);
+  console.log("coin panel:", await coinPanel());
 
   step("creator buys a little of the coin on the curve");
   const typeAmount = async (v) => {
@@ -251,35 +279,12 @@ if (WITH_LAUNCH && !INVENTORY_ONLY) {
 
   step("a second wallet buys out the rest of the curve (from Node)");
   await buyOutCurve(machineId);
-  await bodyHas("Open · 10 USDC", 60_000, "machine went live");
-  console.log("stage:", await page.evaluate(() => document.querySelector("main h1").parentElement.parentElement.innerText.replace(/\n+/g, " | ").slice(0, 200)));
+  await bodyHas("Graduated", 60_000, "coin graduated");
+  await bodyHas("Pool liquidity", 20_000);
+  console.log("coin panel:", await coinPanel());
   await page.screenshot({ path: `${SHOTS}/chain-graduated.png`, fullPage: true });
 
-  step("open ten packs on the new machine");
-  before = await usdc();
-  await page.click("input[role=switch]");
-  await bodyHas("Open · 100 USDC", 5_000);
-  await click("Open · 100 USDC");
-  t0 = Date.now();
-  await stageHas("Flip all", 120_000);
-  console.log(`revealed in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-  await click("Flip all");
-  await stageHas("Claim USDC", 10_000);
-  await sleep(1200);
-  console.log(await page.evaluate(() => document.querySelector("[data-stage]").innerText.match(/Total pulled[^\n]*\n?[^\n]*/)?.[0]));
-  await click("Claim USDC");
-  await stageHas("USDC delivered", 60_000);
-  console.log("USDC", before, "→", await usdc());
-  await click("Done");
-  await sleep(800);
-
-  step("buy back & burn, then sell the creator's coins");
-  const coinPanel = () => page.evaluate(() => [...document.querySelectorAll("section")].find((s) => s.innerText.toLowerCase().startsWith("machine coin"))?.innerText.replace(/\n+/g, " | "));
-  await bodyHas("Waiting to buy back $2.00", 40_000, "buyback accrued");
-  console.log("before:", await coinPanel());
-  console.log("clicked crank:", await click("Buy back & burn"));
-  await bodyHas("Waiting to buy back $0.00", 60_000, "buyback done");
-  console.log("after: ", await coinPanel());
+  step("sell the creator's coins into the pool");
   await click("Sell");
   await sleep(200);
   await click("Max");
@@ -287,7 +292,7 @@ if (WITH_LAUNCH && !INVENTORY_ONLY) {
   before = await usdc();
   console.log("clicked sell:", await click(`Sell $${symbol}`));
   await until(async () => (await usdc()) > before);
-  console.log("USDC", before, "→", await usdc(), "(sold after graduation and one buyback)");
+  console.log("USDC", before, "→", await usdc(), "(coins from pulls and the curve, sold after graduation)");
   await page.screenshot({ path: `${SHOTS}/chain-coin.png`, fullPage: true });
 
   step("inventory: withdraw creator fees");

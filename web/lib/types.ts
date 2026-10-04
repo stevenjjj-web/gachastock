@@ -10,11 +10,11 @@ export type Pack = {
   status: "pending" | "revealed" | "claimed";
   pulls: Pull[];
   lockedAmount: number;
+  /** Machine coins the pulls bought for the owner (base units); delivered on claim */
+  coins: number;
   ts: number;
   claimedAs?: ClaimAs;
 };
-
-export type MachineStatus = "curve" | "live" | "failed";
 
 /** The coin of a launchpad machine. Amounts are base units (6 decimals). */
 export type CoinInfo = {
@@ -23,14 +23,13 @@ export type CoinInfo = {
   sold: number;
   /** USDC backing the coin: the curve reserve before graduation, the pool's USDC side after */
   marketUsdc: number;
+  /** The curve sold out and the coin trades against its pool */
+  graduated: boolean;
   /** Coin side of the post-graduation pool */
   poolCoins: number;
-  burned: number;
-  boughtBack: number;
-  /** Fees accrued for the next buyback */
-  buybackPending: number;
-  /** Unix ms; the curve must sell out before this */
-  deadline: number;
+  /** Coins that pulls have bought for players, and the USDC that paid for them */
+  rebatedCoins: number;
+  rebatedUsdc: number;
   /** Coins the connected wallet holds */
   held: number;
 };
@@ -38,7 +37,6 @@ export type CoinInfo = {
 export type MachineInfo = {
   id: string;
   official: boolean;
-  status: MachineStatus;
   name: string;
   symbol: string;
   theme: number;
@@ -47,13 +45,18 @@ export type MachineInfo = {
   creator: string;
   /** The connected wallet launched this machine */
   mine: boolean;
-  prizePool: number;
   totalPulls: number;
   volume: number;
   jackpots: number;
   creatorAccrued: number;
-  protocolFees: number;
   coin?: CoinInfo;
+};
+
+/** The one prize pool every machine plays for. */
+export type PoolInfo = {
+  prizePool: number;
+  totalPulls: number;
+  jackpots: number;
 };
 
 export type NewMachine = {
@@ -82,6 +85,7 @@ export type GachaState = {
   dryStreak: number;
   totalSpent: number;
   totalWon: number;
+  pool: PoolInfo;
   machines: MachineInfo[];
   packs: Pack[];
   recent: Opening[];
@@ -99,9 +103,7 @@ export type GachaApi = GachaState & {
   coinBuy(machineId: string, usdc: number): Promise<void>;
   /** Sell `coins` of the machine coin */
   coinSell(machineId: string, coins: number): Promise<void>;
-  /** Spend accrued fees on a buyback and burn; anyone can call it */
-  crankBuyback(machineId: string): Promise<void>;
-  /** Send accrued fees to the creator and the treasury */
+  /** Send a machine's accrued creator fees to its creator */
   withdrawFees(machineId: string): Promise<void>;
   /** Chain mode only: open the wallet picker */
   connect?(): void;

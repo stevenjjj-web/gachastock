@@ -10,9 +10,11 @@ pub const MAX_BASKET: usize = 8;
 pub const SR: u8 = 2;
 pub const JACKPOT: u8 = 6;
 
-/// Launchpad machines split the per-pull fee: this much of the pack price buys back and
-/// burns the machine coin, this much goes to the creator, the rest to the protocol.
-pub const BUYBACK_BPS: u16 = 200;
+/// Launchpad machines split the per-pull fee: this much of the pack price buys the machine
+/// coin for the player who pulled, this much goes to the creator, the rest to the protocol.
+/// Official machines have no coin and no creator: the coin share goes to the prize pool and
+/// the creator's share to the protocol.
+pub const REBATE_BPS: u16 = 300;
 pub const CREATOR_BPS: u16 = 100;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, InitSpace, Debug, PartialEq)]
@@ -38,20 +40,10 @@ pub enum PackStatus {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace, Debug, PartialEq, Eq)]
 pub enum MachineKind {
-    /// Run by the protocol; the whole fee goes to the protocol and there is no machine coin.
+    /// Run by the protocol; there is no machine coin.
     Official,
-    /// Launched by anyone, with a machine coin sold on a bonding curve.
+    /// Launched by anyone, with a machine coin that players earn by pulling.
     Launchpad,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, InitSpace, Debug, PartialEq, Eq)]
-pub enum MachineStatus {
-    /// The machine coin is selling on the bonding curve; the machine is not open yet.
-    Curve,
-    /// Open for pulls.
-    Live,
-    /// The curve missed its deadline; holders sell back along the curve and the machine never opens.
-    Failed,
 }
 
 #[account]
@@ -66,6 +58,40 @@ pub struct Config {
     pub active_season: u16,
     pub season_count: u16,
     pub bump: u8,
+}
+
+/// The one prize pool every machine plays for, and the only place the program holds USDC.
+/// Its token account must always hold at least the sum of the ledger fields.
+#[account]
+#[derive(InitSpace, Default)]
+pub struct Vault {
+    pub token: Pubkey,
+
+    // Ledger
+    /// Paid for packs that are still waiting for their draw.
+    pub pending: u64,
+    pub prize_pool: u64,
+    /// Revealed prizes that have not been claimed yet.
+    pub locked: u64,
+    pub protocol_fees: u64,
+    /// Sum over all machines of `market_usdc + creator_accrued`.
+    pub markets: u64,
+
+    // Stats
+    pub total_pulls: u64,
+    pub total_volume: u64,
+    pub jackpots_won: u32,
+    pub bump: u8,
+}
+
+impl Vault {
+    pub fn owed(&self) -> Option<u64> {
+        self.pending
+            .checked_add(self.prize_pool)?
+            .checked_add(self.locked)?
+            .checked_add(self.protocol_fees)?
+            .checked_add(self.markets)
+    }
 }
 
 /// Economic parameters shared by machines. Immutable once published; new parameters need a
@@ -83,7 +109,7 @@ pub struct Season {
     pub pity: u16,
     pub timeout_slots: u64,
     /// The jackpot only pays while the prize pool is at least this large; below it a jackpot
-    /// roll is treated as the best fixed tier the pool can afford.
+    /// roll pays the best fixed tier the pool can afford.
     pub jackpot_min_pool: u64,
     pub tiers: [Tier; TIER_COUNT],
     /// Stock mints a machine may put in its basket.
@@ -99,14 +125,13 @@ pub struct Registry {
     pub bump: u8,
 }
 
-/// One gacha machine: its own theme, stock basket and prize pool, with its own ledger.
-/// The machine's USDC token account must always hold at least the sum of the ledger fields.
+/// One gacha machine: a theme, a stock basket and, for launchpad machines, a coin and a
+/// creator. Machines hold no USDC themselves; the amounts below are their share of the vault.
 #[account]
 #[derive(InitSpace)]
 pub struct Machine {
     pub id: u64,
     pub kind: MachineKind,
-    pub status: MachineStatus,
     pub creator: Pubkey,
     pub season: u16,
     #[max_len(32)]
@@ -118,19 +143,13 @@ pub struct Machine {
     /// Indices into the season's stock whitelist.
     #[max_len(MAX_BASKET)]
     pub basket: Vec<u8>,
-    pub pool_token: Pubkey,
     /// Machine coin mint; default for official machines.
     pub coin_mint: Pubkey,
 
     // Ledger
-    pub pending: u64,
-    pub prize_pool: u64,
-    pub locked: u64,
-    pub protocol_fees: u64,
-    pub buyback_accrued: u64,
-    pub creator_accrued: u64,
     /// USDC backing the machine coin: the curve reserve before graduation, the pool's USDC side after.
     pub market_usdc: u64,
+    pub creator_accrued: u64,
 
     // Stats
     pub total_pulls: u64,
@@ -139,35 +158,23 @@ pub struct Machine {
     pub bump: u8,
 }
 
-impl Machine {
-    pub fn owed(&self) -> Option<u64> {
-        self.pending
-            .checked_add(self.prize_pool)?
-            .checked_add(self.locked)?
-            .checked_add(self.protocol_fees)?
-            .checked_add(self.buyback_accrued)?
-            .checked_add(self.creator_accrued)?
-            .checked_add(self.market_usdc)
-    }
-}
-
 /// Coin-side state of a launchpad machine's market.
 #[account]
-#[derive(InitSpace)]
+#[derive(InitSpace, Default)]
 pub struct Curve {
     pub machine: Pubkey,
-    pub deadline: i64,
     pub launch_slot: u64,
-    /// Coins sold by the curve and still outstanding (pre-graduation).
+    /// Coins sold by the curve and still outstanding. Stays at the full curve supply after graduation.
     pub sold: u64,
     pub creator_bought: u64,
+    /// The curve sold out and the coin now trades against the pool.
+    pub graduated: bool,
+    pub graduated_at: i64,
     /// Coin side of the post-graduation pool. These coins are minted only when bought.
     pub pool_coins: u64,
-    /// Coins removed for good by buybacks.
-    pub burned: u64,
-    /// USDC spent on buybacks so far.
-    pub bought_back: u64,
-    pub graduated_at: i64,
+    /// Coins bought for players by their pulls, and the USDC that paid for them.
+    pub rebated_coins: u64,
+    pub rebated_usdc: u64,
     pub bump: u8,
 }
 
@@ -183,6 +190,8 @@ pub struct Pack {
     pub status: PackStatus,
     pub request_slot: u64,
     pub locked_amount: u64,
+    /// Machine coins the pulls bought for the owner; minted on claim.
+    pub coins: u64,
     pub results: [PullResult; MAX_PULLS],
     pub nonce: u64,
     pub bump: u8,
@@ -244,16 +253,15 @@ pub struct CoinTraded {
 #[event]
 pub struct MachineGraduated {
     pub machine: Pubkey,
-    pub seed: u64,
     pub pool_usdc: u64,
     pub pool_coins: u64,
 }
 
 #[event]
-pub struct BuybackBurned {
-    pub machine: Pubkey,
-    pub usdc: u64,
-    pub coins: u64,
+pub struct PoolFunded {
+    pub funder: Pubkey,
+    pub amount: u64,
+    pub prize_pool_after: u64,
 }
 
 #[event]
@@ -273,6 +281,7 @@ pub struct PackOpened {
     pub count: u8,
     pub results: [PullResult; MAX_PULLS],
     pub locked_amount: u64,
+    pub coins: u64,
     pub prize_pool_after: u64,
 }
 
@@ -282,6 +291,7 @@ pub struct PackClaimed {
     pub owner: Pubkey,
     pub amount: u64,
     pub settle_fee: u64,
+    pub coins: u64,
 }
 
 #[event]
@@ -319,8 +329,6 @@ pub enum GachaError {
     NothingToWithdraw,
     #[msg("Invalid machine parameters")]
     BadMachine,
-    #[msg("This machine is not open")]
-    NotLive,
     #[msg("This machine coin is not trading")]
     MarketClosed,
     #[msg("Price moved past the slippage limit")]
@@ -331,4 +339,6 @@ pub enum GachaError {
     EarlyCap,
     #[msg("Trade amount is too small")]
     TooSmall,
+    #[msg("The machine coin accounts are missing or do not match")]
+    BadCoinAccount,
 }

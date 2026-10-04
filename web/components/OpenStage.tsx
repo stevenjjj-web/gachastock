@@ -9,6 +9,7 @@ import { useGacha } from "@/lib/gacha-context";
 import { useI18n } from "@/lib/i18n";
 import type { ClaimAs, Pack } from "@/lib/types";
 import { PackArt } from "./art";
+import { coins } from "./CoinPanel";
 import { PullCard } from "./PullCard";
 
 export type OpenRequest = {
@@ -17,7 +18,7 @@ export type OpenRequest = {
   title: string;
   symbol: string;
   theme: number;
-  /** Pays (or burns pack coins) and resolves once the VRF callback has revealed the pack */
+  /** Pays and resolves once the VRF callback has revealed the pack */
   run: () => Promise<Pack>;
 };
 
@@ -214,7 +215,7 @@ export function OpenStage({ request, onClose, onAgain }: { request: OpenRequest;
               </div>
             )}
 
-            <div className="mt-8 flex min-h-[132px] flex-col items-center gap-4">
+            <div className="mt-8 flex min-h-[160px] flex-col items-center gap-4">
               {!allFlipped && pack.count > 1 && (
                 <button className="btn" onClick={flipAll}>
                   {t("stage.flipAll")}
@@ -226,6 +227,11 @@ export function OpenStage({ request, onClose, onAgain }: { request: OpenRequest;
                     {t("stage.total")} <span className="text-gold font-mono text-3xl font-bold">${usd(pack.lockedAmount)}</span>
                     <span className="ml-2 text-sm">{t("stage.cost", { n: usd(pack.paid, 0) })}</span>
                   </p>
+                  {pack.coins > 0 && (
+                    <p className="-mt-2 font-semibold text-accent" data-coins>
+                      {t("stage.coins", { n: coins(pack.coins), sym: request.symbol })}
+                    </p>
+                  )}
                   {claimed ? (
                     <>
                       <p className="font-semibold text-success">

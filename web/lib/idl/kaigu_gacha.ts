@@ -61,8 +61,31 @@ export type KaiguGacha = {
           }
         },
         {
-          "name": "machine",
+          "name": "vault",
           "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine",
           "pda": {
             "seeds": [
               {
@@ -81,6 +104,31 @@ export type KaiguGacha = {
                 "kind": "account",
                 "path": "machine.id",
                 "account": "machine"
+              }
+            ]
+          }
+        },
+        {
+          "name": "curve",
+          "docs": [
+            "The machine's coin market; required for launchpad machines, absent for official ones."
+          ],
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine"
               }
             ]
           }
@@ -161,7 +209,7 @@ export type KaiguGacha = {
           "writable": true
         },
         {
-          "name": "poolToken",
+          "name": "vaultToken",
           "writable": true
         },
         {
@@ -231,7 +279,7 @@ export type KaiguGacha = {
     {
       "name": "callbackOpen",
       "docs": [
-        "Draw callback. Callable only by the MagicBlock VRF identity; it only updates the ledger and moves no tokens."
+        "Draw callback. Callable only by the MagicBlock VRF identity; it only updates the ledgers and moves no tokens."
       ],
       "discriminator": [
         54,
@@ -329,6 +377,53 @@ export type KaiguGacha = {
               }
             ]
           }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "curve",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  117,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "machine"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -346,8 +441,9 @@ export type KaiguGacha = {
     {
       "name": "claim",
       "docs": [
-        "Sends the locked USDC to the user minus the settlement fee, closes the Pack and returns its rent.",
-        "The frontend can append Jupiter swap instructions in the same transaction to turn the USDC into the pulled stock."
+        "Sends the locked USDC to the user minus the settlement fee, mints the machine coins the",
+        "pulls bought, closes the Pack and returns its rent. The frontend can append Jupiter swap",
+        "instructions in the same transaction to turn the USDC into the pulled stock."
       ],
       "discriminator": [
         62,
@@ -410,8 +506,31 @@ export type KaiguGacha = {
           }
         },
         {
-          "name": "machine",
-          "writable": true
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine"
         },
         {
           "name": "pack",
@@ -451,7 +570,7 @@ export type KaiguGacha = {
           "writable": true
         },
         {
-          "name": "poolToken",
+          "name": "vaultToken",
           "writable": true
         },
         {
@@ -459,6 +578,26 @@ export type KaiguGacha = {
         },
         {
           "name": "tokenProgram"
+        },
+        {
+          "name": "coinMint",
+          "docs": [
+            "Needed only when the pack's pulls bought machine coins."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "userCoin",
+          "docs": [
+            "The owner's token account for the machine coin; the handler checks its mint and owner."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "coinTokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
       "args": []
@@ -468,8 +607,7 @@ export type KaiguGacha = {
       "docs": [
         "Buys the machine coin with at most `usdc_in` (fee included). Before graduation this",
         "trades on the bonding curve; the purchase that sells the last curve coin graduates the",
-        "machine: 4,000 USDC of the raise seeds its prize pool and the rest backs the trading",
-        "pool. After graduation it trades against that pool."
+        "coin and the whole raise becomes its pool. After graduation it trades against that pool."
       ],
       "discriminator": [
         137,
@@ -506,6 +644,30 @@ export type KaiguGacha = {
           }
         },
         {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "machine",
           "writable": true,
           "pda": {
@@ -618,7 +780,7 @@ export type KaiguGacha = {
           "writable": true
         },
         {
-          "name": "poolToken",
+          "name": "vaultToken",
           "writable": true
         },
         {
@@ -654,9 +816,7 @@ export type KaiguGacha = {
     {
       "name": "coinSell",
       "docs": [
-        "Sells machine coins. On the curve this pays the curve price; if the curve missed its",
-        "deadline the machine is marked failed and holders sell back along the curve with no",
-        "fee. After graduation it trades against the pool."
+        "Sells machine coins back to the curve or, after graduation, to the pool. Not affected by pause."
       ],
       "discriminator": [
         195,
@@ -693,6 +853,30 @@ export type KaiguGacha = {
           }
         },
         {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "machine",
           "writable": true,
           "pda": {
@@ -805,7 +989,7 @@ export type KaiguGacha = {
           "writable": true
         },
         {
-          "name": "poolToken",
+          "name": "vaultToken",
           "writable": true
         },
         {
@@ -839,85 +1023,9 @@ export type KaiguGacha = {
       ]
     },
     {
-      "name": "crankBuyback",
-      "docs": [
-        "Spends accrued buyback funds on the machine coin and burns what it buys. Anyone can",
-        "crank it; each call is capped so buybacks land in small pieces."
-      ],
-      "discriminator": [
-        37,
-        215,
-        1,
-        139,
-        147,
-        5,
-        99,
-        198
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "signer": true
-        },
-        {
-          "name": "machine",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  99,
-                  104,
-                  105,
-                  110,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "machine.id",
-                "account": "machine"
-              }
-            ]
-          }
-        },
-        {
-          "name": "curve",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  117,
-                  114,
-                  118,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "machine"
-              }
-            ]
-          }
-        }
-      ],
-      "args": [
-        {
-          "name": "minCoinsOut",
-          "type": "u64"
-        }
-      ]
-    },
-    {
       "name": "createMachine",
       "docs": [
-        "Creates an official machine: open immediately, no machine coin, whole fee to the protocol."
+        "Creates an official machine: no machine coin and no creator."
       ],
       "discriminator": [
         68,
@@ -1026,41 +1134,6 @@ export type KaiguGacha = {
           }
         },
         {
-          "name": "poolToken",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  99,
-                  104,
-                  105,
-                  110,
-                  101,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "machine"
-              }
-            ]
-          }
-        },
-        {
-          "name": "usdcMint"
-        },
-        {
-          "name": "tokenProgram"
-        },
-        {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
         }
@@ -1161,6 +1234,200 @@ export type KaiguGacha = {
       ]
     },
     {
+      "name": "fundPool",
+      "docs": [
+        "Adds USDC to the shared prize pool. Anyone can do it; it cannot be taken back out",
+        "except as prizes."
+      ],
+      "discriminator": [
+        36,
+        57,
+        233,
+        176,
+        181,
+        20,
+        87,
+        159
+      ],
+      "accounts": [
+        {
+          "name": "funder",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vaultToken",
+          "writable": true
+        },
+        {
+          "name": "funderUsdc",
+          "writable": true
+        },
+        {
+          "name": "usdcMint"
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initVault",
+      "docs": [
+        "Opens the shared vault: the one prize pool and the one USDC account of the program."
+      ],
+      "discriminator": [
+        77,
+        79,
+        85,
+        150,
+        33,
+        217,
+        52,
+        106
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vaultToken",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdcMint"
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initialize",
       "docs": [
         "Creates the Config. Only the program upgrade authority (multisig) may call it."
@@ -1227,8 +1494,8 @@ export type KaiguGacha = {
       "docs": [
         "Launchpad: anyone can launch a machine and its coin. The creator picks the name,",
         "ticker, art and a stock basket from the whitelist; everything else comes from the",
-        "template and nothing can be changed afterwards. The coin sells on a bonding curve and",
-        "the machine opens once the curve sells out."
+        "template and nothing can be changed afterwards. The machine is open for pulls right",
+        "away and plays for the shared prize pool; its coin starts on a bonding curve."
       ],
       "discriminator": [
         250,
@@ -1283,6 +1550,30 @@ export type KaiguGacha = {
                 "kind": "account",
                 "path": "config.active_season",
                 "account": "config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
               }
             ]
           }
@@ -1380,33 +1671,8 @@ export type KaiguGacha = {
           }
         },
         {
-          "name": "poolToken",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  99,
-                  104,
-                  105,
-                  110,
-                  101,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "machine"
-              }
-            ]
-          }
+          "name": "vaultToken",
+          "writable": true
         },
         {
           "name": "creatorUsdc",
@@ -1504,8 +1770,31 @@ export type KaiguGacha = {
           }
         },
         {
-          "name": "machine",
-          "writable": true
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "machine"
         },
         {
           "name": "pack",
@@ -1545,7 +1834,7 @@ export type KaiguGacha = {
           "writable": true
         },
         {
-          "name": "poolToken",
+          "name": "vaultToken",
           "writable": true
         },
         {
@@ -1553,6 +1842,26 @@ export type KaiguGacha = {
         },
         {
           "name": "tokenProgram"
+        },
+        {
+          "name": "coinMint",
+          "docs": [
+            "Needed only when the pack's pulls bought machine coins."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "userCoin",
+          "docs": [
+            "The owner's token account for the machine coin; the handler checks its mint and owner."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "coinTokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
       "args": []
@@ -1608,21 +1917,19 @@ export type KaiguGacha = {
       ]
     },
     {
-      "name": "withdrawFees",
+      "name": "withdrawCreatorFees",
       "docs": [
-        "Pays a machine's accrued fees to their fixed destinations: the protocol's share to the",
-        "treasury and the creator's share to the creator. Anyone can crank it. No instruction",
-        "can touch the prize pool, locked prizes, pending payments or the coin market's USDC."
+        "Pays a machine's accrued creator fees to its creator. Anyone can crank it."
       ],
       "discriminator": [
-        198,
-        212,
-        171,
-        109,
-        144,
-        215,
-        174,
-        89
+        8,
+        30,
+        213,
+        18,
+        121,
+        105,
+        129,
+        222
       ],
       "accounts": [
         {
@@ -1642,6 +1949,30 @@ export type KaiguGacha = {
                   102,
                   105,
                   103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
                 ]
               }
             ]
@@ -1673,15 +2004,91 @@ export type KaiguGacha = {
           }
         },
         {
-          "name": "poolToken",
-          "writable": true
-        },
-        {
-          "name": "treasuryUsdc",
+          "name": "vaultToken",
           "writable": true
         },
         {
           "name": "creatorUsdc",
+          "writable": true
+        },
+        {
+          "name": "usdcMint"
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdrawProtocolFees",
+      "docs": [
+        "Pays the protocol's accrued fees to the treasury. Anyone can crank it. No instruction",
+        "can take the prize pool, locked prizes, pending payments or a coin market's USDC."
+      ],
+      "discriminator": [
+        11,
+        68,
+        165,
+        98,
+        18,
+        208,
+        134,
+        73
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  105,
+                  122,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vaultToken",
+          "writable": true
+        },
+        {
+          "name": "treasuryUsdc",
           "writable": true
         },
         {
@@ -1785,22 +2192,22 @@ export type KaiguGacha = {
         248,
         47
       ]
+    },
+    {
+      "name": "vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
     }
   ],
   "events": [
-    {
-      "name": "buybackBurned",
-      "discriminator": [
-        186,
-        84,
-        241,
-        202,
-        152,
-        185,
-        0,
-        115
-      ]
-    },
     {
       "name": "coinTraded",
       "discriminator": [
@@ -1891,6 +2298,19 @@ export type KaiguGacha = {
         184,
         47
       ]
+    },
+    {
+      "name": "poolFunded",
+      "discriminator": [
+        164,
+        221,
+        242,
+        68,
+        164,
+        64,
+        24,
+        214
+      ]
     }
   ],
   "errors": [
@@ -1961,56 +2381,36 @@ export type KaiguGacha = {
     },
     {
       "code": 6013,
-      "name": "notLive",
-      "msg": "This machine is not open"
-    },
-    {
-      "code": 6014,
       "name": "marketClosed",
       "msg": "This machine coin is not trading"
     },
     {
-      "code": 6015,
+      "code": 6014,
       "name": "slippage",
       "msg": "Price moved past the slippage limit"
     },
     {
-      "code": 6016,
+      "code": 6015,
       "name": "creatorCap",
       "msg": "The creator's allocation on the curve is used up"
     },
     {
-      "code": 6017,
+      "code": 6016,
       "name": "earlyCap",
       "msg": "Purchase is above the limit for the first blocks after launch"
     },
     {
-      "code": 6018,
+      "code": 6017,
       "name": "tooSmall",
       "msg": "Trade amount is too small"
+    },
+    {
+      "code": 6018,
+      "name": "badCoinAccount",
+      "msg": "The machine coin accounts are missing or do not match"
     }
   ],
   "types": [
-    {
-      "name": "buybackBurned",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "machine",
-            "type": "pubkey"
-          },
-          {
-            "name": "usdc",
-            "type": "u64"
-          },
-          {
-            "name": "coins",
-            "type": "u64"
-          }
-        ]
-      }
-    },
     {
       "name": "coinTraded",
       "type": {
@@ -2099,23 +2499,30 @@ export type KaiguGacha = {
             "type": "pubkey"
           },
           {
-            "name": "deadline",
-            "type": "i64"
-          },
-          {
             "name": "launchSlot",
             "type": "u64"
           },
           {
             "name": "sold",
             "docs": [
-              "Coins sold by the curve and still outstanding (pre-graduation)."
+              "Coins sold by the curve and still outstanding. Stays at the full curve supply after graduation."
             ],
             "type": "u64"
           },
           {
             "name": "creatorBought",
             "type": "u64"
+          },
+          {
+            "name": "graduated",
+            "docs": [
+              "The curve sold out and the coin now trades against the pool."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "graduatedAt",
+            "type": "i64"
           },
           {
             "name": "poolCoins",
@@ -2125,22 +2532,15 @@ export type KaiguGacha = {
             "type": "u64"
           },
           {
-            "name": "burned",
+            "name": "rebatedCoins",
             "docs": [
-              "Coins removed for good by buybacks."
+              "Coins bought for players by their pulls, and the USDC that paid for them."
             ],
             "type": "u64"
           },
           {
-            "name": "boughtBack",
-            "docs": [
-              "USDC spent on buybacks so far."
-            ],
+            "name": "rebatedUsdc",
             "type": "u64"
-          },
-          {
-            "name": "graduatedAt",
-            "type": "i64"
           },
           {
             "name": "bump",
@@ -2152,8 +2552,8 @@ export type KaiguGacha = {
     {
       "name": "machine",
       "docs": [
-        "One gacha machine: its own theme, stock basket and prize pool, with its own ledger.",
-        "The machine's USDC token account must always hold at least the sum of the ledger fields."
+        "One gacha machine: a theme, a stock basket and, for launchpad machines, a coin and a",
+        "creator. Machines hold no USDC themselves; the amounts below are their share of the vault."
       ],
       "type": {
         "kind": "struct",
@@ -2167,14 +2567,6 @@ export type KaiguGacha = {
             "type": {
               "defined": {
                 "name": "machineKind"
-              }
-            }
-          },
-          {
-            "name": "status",
-            "type": {
-              "defined": {
-                "name": "machineStatus"
               }
             }
           },
@@ -2209,10 +2601,6 @@ export type KaiguGacha = {
             "type": "bytes"
           },
           {
-            "name": "poolToken",
-            "type": "pubkey"
-          },
-          {
             "name": "coinMint",
             "docs": [
               "Machine coin mint; default for official machines."
@@ -2220,34 +2608,14 @@ export type KaiguGacha = {
             "type": "pubkey"
           },
           {
-            "name": "pending",
-            "type": "u64"
-          },
-          {
-            "name": "prizePool",
-            "type": "u64"
-          },
-          {
-            "name": "locked",
-            "type": "u64"
-          },
-          {
-            "name": "protocolFees",
-            "type": "u64"
-          },
-          {
-            "name": "buybackAccrued",
-            "type": "u64"
-          },
-          {
-            "name": "creatorAccrued",
-            "type": "u64"
-          },
-          {
             "name": "marketUsdc",
             "docs": [
               "USDC backing the machine coin: the curve reserve before graduation, the pool's USDC side after."
             ],
+            "type": "u64"
+          },
+          {
+            "name": "creatorAccrued",
             "type": "u64"
           },
           {
@@ -2331,10 +2699,6 @@ export type KaiguGacha = {
             "type": "pubkey"
           },
           {
-            "name": "seed",
-            "type": "u64"
-          },
-          {
             "name": "poolUsdc",
             "type": "u64"
           },
@@ -2355,23 +2719,6 @@ export type KaiguGacha = {
           },
           {
             "name": "launchpad"
-          }
-        ]
-      }
-    },
-    {
-      "name": "machineStatus",
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "curve"
-          },
-          {
-            "name": "live"
-          },
-          {
-            "name": "failed"
           }
         ]
       }
@@ -2422,6 +2769,13 @@ export type KaiguGacha = {
             "type": "u64"
           },
           {
+            "name": "coins",
+            "docs": [
+              "Machine coins the pulls bought for the owner; minted on claim."
+            ],
+            "type": "u64"
+          },
+          {
             "name": "results",
             "type": {
               "array": [
@@ -2465,6 +2819,10 @@ export type KaiguGacha = {
           {
             "name": "settleFee",
             "type": "u64"
+          },
+          {
+            "name": "coins",
+            "type": "u64"
           }
         ]
       }
@@ -2505,6 +2863,10 @@ export type KaiguGacha = {
           },
           {
             "name": "lockedAmount",
+            "type": "u64"
+          },
+          {
+            "name": "coins",
             "type": "u64"
           },
           {
@@ -2609,6 +2971,26 @@ export type KaiguGacha = {
       }
     },
     {
+      "name": "poolFunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "funder",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "prizePoolAfter",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "pullResult",
       "type": {
         "kind": "struct",
@@ -2696,7 +3078,7 @@ export type KaiguGacha = {
             "name": "jackpotMinPool",
             "docs": [
               "The jackpot only pays while the prize pool is at least this large; below it a jackpot",
-              "roll is treated as the best fixed tier the pool can afford."
+              "roll pays the best fixed tier the pool can afford."
             ],
             "type": "u64"
           },
@@ -2807,6 +3189,67 @@ export type KaiguGacha = {
               "Prize-pool payout on top of the floor (USDC base units). Ignored for the jackpot tier."
             ],
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "vault",
+      "docs": [
+        "The one prize pool every machine plays for, and the only place the program holds USDC.",
+        "Its token account must always hold at least the sum of the ledger fields."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "token",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending",
+            "docs": [
+              "Paid for packs that are still waiting for their draw."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "prizePool",
+            "type": "u64"
+          },
+          {
+            "name": "locked",
+            "docs": [
+              "Revealed prizes that have not been claimed yet."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "protocolFees",
+            "type": "u64"
+          },
+          {
+            "name": "markets",
+            "docs": [
+              "Sum over all machines of `market_usdc + creator_accrued`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "totalPulls",
+            "type": "u64"
+          },
+          {
+            "name": "totalVolume",
+            "type": "u64"
+          },
+          {
+            "name": "jackpotsWon",
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }

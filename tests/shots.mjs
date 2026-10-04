@@ -41,26 +41,29 @@ await sleep(1300); await shot("e2-charging");
 await sleep(3600); await click("Flip all"); await sleep(2600); await shot("e3-ten-flipped");
 await click("Claim USDC"); await sleep(500); await click("Done"); await sleep(600);
 
-// Live launchpad machine: trade the coin and crank a buyback
+// Graduated launchpad machine: a pull buys its coin for the player, then trade it
 await p.goto(`${BASE}/?m=3`, { waitUntil: "networkidle0" }); await sleep(600);
 await shot("e4-launchpad-live"); await shot("e4-launchpad-live-full", true);
+console.log("open on a launchpad machine:", await click("Open · 10 USDC"));
+await sleep(6000); await shot("e4b-rebate");
+console.log("  stage:", (await text("[data-stage]"))?.slice(0, 260));
+await click("Claim USDC"); await sleep(400); await click("Done"); await sleep(400);
 await typeAmount(50);
 console.log("buy coin:", await click("Buy $MAG7")); await sleep(400);
-console.log("crank:", await click("Buy back & burn")); await sleep(400);
 await click("Sell"); await sleep(200); await click("Max"); await sleep(200);
 await shot("e5-coin-sell");
 console.log("sell coin:", await click("Sell $MAG7")); await sleep(400);
 console.log("coin panel:", await text("main section:nth-of-type(2)"));
 
-// Machine still on its curve: buy it out so it graduates, then play it
+// Coin still on its curve: buy it out so it graduates, then play the machine
 await p.goto(`${BASE}/?m=4`, { waitUntil: "networkidle0" }); await sleep(600);
 await shot("e6-curve");
-for (let i = 0; i < 4; i++) { await click("+ Test USDC"); await sleep(100); }
-await typeAmount(2500);
+for (let i = 0; i < 8; i++) { await click("+ Test USDC"); await sleep(100); }
+await typeAmount(4000);
 console.log("buy out the curve:", await click("Buy $DEGEN")); await sleep(600);
 await shot("e7-graduated");
 console.log("after graduation:", await p.evaluate(() => document.querySelector("main h1").parentElement.parentElement.innerText.replace(/\n+/g, " | ").slice(0, 260)));
-console.log("open on new machine:", await click("Open · 10 USDC"));
+console.log("open on that machine:", await click("Open · 10 USDC"));
 await sleep(6000); await shot("e8-single"); await click("Claim stock"); await sleep(400); await click("Done"); await sleep(400);
 
 await p.goto(`${BASE}/machines`, { waitUntil: "networkidle0" }); await sleep(500); await shot("e9-machines", true);

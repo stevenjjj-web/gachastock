@@ -1,5 +1,5 @@
-// Run after deploying: initialize (first time only), publish a season, and create the
-// official machines that do not exist yet.
+// Run after deploying: initialize (first time only), publish a season, open the shared vault
+// and create the official machines that do not exist yet.
 // Usage: cd web && USDC_MINT=<mint> npx tsx scripts/init-season.ts
 // The wallet must be the program upgrade authority (ANCHOR_WALLET, default ~/.config/solana/id.json).
 // Set NEW_SEASON=1 to publish a new season even when one already exists.
@@ -7,7 +7,7 @@
 import { AnchorProvider, BN, Program } from "@coral-xyz/anchor";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey } from "@solana/web3.js";
-import { OFFICIAL_MACHINES, SEASON, STOCKS, TIERS } from "../lib/config";
+import { MACHINE_ACCOUNT_SIZE, OFFICIAL_MACHINES, SEASON, STOCKS, TIERS } from "../lib/config";
 import idl from "../lib/idl/kaigu_gacha.json";
 import type { KaiguGacha } from "../lib/idl/kaigu_gacha";
 
@@ -64,20 +64,31 @@ async function main() {
     config = await program.account.config.fetch(configKey);
   }
 
+  const vault = pda(Buffer.from("prize_vault"));
+  if (!(await provider.connection.getAccountInfo(vault))) {
+    const sig = await program.methods
+      .initVault()
+      .accountsPartial({ admin, vaultToken: pda(Buffer.from("prize_vault_token")), usdcMint: config.usdcMint, tokenProgram: TOKEN_PROGRAM_ID })
+      .rpc();
+    console.log("init_vault", sig);
+  }
+
+  // Official machines are matched by ticker. Machine accounts of another size were created by
+  // an earlier program version and are ignored.
   const registry = await program.account.registry.fetchNullable(pda(Buffer.from("registry")));
   let next = registry?.machineCount.toNumber() ?? 0;
-  for (const m of OFFICIAL_MACHINES.slice(next)) {
-    const machine = pda(Buffer.from("machine"), u64(next));
+  const existing = await provider.connection.getMultipleAccountsInfo(Array.from({ length: next }, (_, i) => pda(Buffer.from("machine"), u64(i))));
+  const have = new Set(
+    existing
+      .filter((info) => info?.data.length === MACHINE_ACCOUNT_SIZE)
+      .map((info) => program.coder.accounts.decode("machine", info!.data))
+      .filter((m) => "official" in m.kind)
+      .map((m) => m.symbol as string),
+  );
+  for (const m of OFFICIAL_MACHINES.filter((x) => !have.has(x.symbol))) {
     const sig = await program.methods
       .createMachine({ name: m.name, symbol: m.symbol, theme: m.theme, basket: Buffer.from(m.basket) })
-      .accountsPartial({
-        admin,
-        season: pda(Buffer.from("season"), u16(config.activeSeason)),
-        machine,
-        poolToken: pda(Buffer.from("machine_pool"), machine.toBuffer()),
-        usdcMint: config.usdcMint,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
+      .accountsPartial({ admin, season: pda(Buffer.from("season"), u16(config.activeSeason)), machine: pda(Buffer.from("machine"), u64(next)) })
       .rpc();
     console.log("create_machine", next, m.symbol, sig);
     next += 1;

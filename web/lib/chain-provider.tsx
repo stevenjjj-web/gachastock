@@ -1,7 +1,7 @@
 "use client";
 
 // Chain mode: enabled when NEXT_PUBLIC_PROGRAM_ID is set. Covers pulls on machines
-// (buy → VRF callback → claim), the launchpad, machine coin trading and buybacks.
+// (buy → VRF callback → claim), the shared prize pool, the launchpad and machine coin trading.
 
 import { AnchorProvider, BN, EventParser, Program } from "@coral-xyz/anchor";
 import {
@@ -20,14 +20,14 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CHAIN, MARKET, SEASON, STOCKS } from "./config";
+import { CHAIN, MACHINE_ACCOUNT_SIZE, MARKET, SEASON, STOCKS } from "./config";
 import { bps, quoteBuy, quoteSell } from "./engine";
 import { GachaContext } from "./gacha-context";
 import { GachaError } from "./i18n";
 import idl from "./idl/kaigu_gacha.json";
 import type { KaiguGacha } from "./idl/kaigu_gacha";
 import type { Key } from "./locales/en";
-import type { ClaimAs, GachaApi, GachaState, MachineInfo, MachineStatus, NewMachine, Opening, Pack } from "./types";
+import type { ClaimAs, GachaApi, GachaState, MachineInfo, NewMachine, Opening, Pack } from "./types";
 
 // MagicBlock VRF base-layer queue (same address on mainnet and devnet)
 const ORACLE_QUEUE = new PublicKey("Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh");
@@ -50,13 +50,15 @@ const short = (k: PublicKey | string) => {
   return `${a.slice(0, 4)}…${a.slice(-4)}`;
 };
 
+/** The shared vault: its ledger account and the one USDC account of the program. */
+const vaultAccounts = () => ({ vault: pda(Buffer.from("prize_vault")), vaultToken: pda(Buffer.from("prize_vault_token")) });
+
 function machineAccounts(id: string) {
   const machine = pda(Buffer.from("machine"), u64le(new BN(id)));
   return {
     machine,
     curve: pda(Buffer.from("curve"), machine.toBuffer()),
     coinMint: pda(Buffer.from("coin"), machine.toBuffer()),
-    poolToken: pda(Buffer.from("machine_pool"), machine.toBuffer()),
   };
 }
 
@@ -64,6 +66,7 @@ type Accounts = Program<KaiguGacha>["account"];
 type RawPack = Awaited<ReturnType<Accounts["pack"]["fetch"]>>;
 type RawMachine = Awaited<ReturnType<Accounts["machine"]["fetch"]>>;
 type RawCurve = Awaited<ReturnType<Accounts["curve"]["fetch"]>>;
+type RawVault = Awaited<ReturnType<Accounts["vault"]["fetch"]>>;
 
 function toPack(key: PublicKey, raw: RawPack, machineId: string): Pack {
   const revealed = "revealed" in raw.status;
@@ -77,6 +80,7 @@ function toPack(key: PublicKey, raw: RawPack, machineId: string): Pack {
       ? raw.results.slice(0, raw.count).map((r) => ({ tier: r.tier, value: r.value.toNumber(), stockIdx: r.stockIdx }))
       : [],
     lockedAmount: raw.lockedAmount.toNumber(),
+    coins: raw.coins.toNumber(),
     ts: 0,
   };
 }
@@ -86,29 +90,25 @@ function toMachine(raw: RawMachine, curve: RawCurve | null, owner: PublicKey | n
   return {
     id: raw.id.toString(),
     official,
-    status: Object.keys(raw.status)[0] as MachineStatus,
     name: raw.name,
     symbol: raw.symbol,
     theme: raw.theme,
     basket: Array.from(raw.basket),
     creator: official ? "GachaStock" : short(raw.creator),
     mine: !official && !!owner && raw.creator.equals(owner),
-    prizePool: raw.prizePool.toNumber(),
     totalPulls: raw.totalPulls.toNumber(),
     volume: raw.totalVolume.toNumber(),
     jackpots: raw.jackpotsWon,
     creatorAccrued: raw.creatorAccrued.toNumber(),
-    protocolFees: raw.protocolFees.toNumber(),
     coin: curve
       ? {
           mint: raw.coinMint.toBase58(),
           sold: curve.sold.toNumber(),
           marketUsdc: raw.marketUsdc.toNumber(),
+          graduated: curve.graduated,
           poolCoins: curve.poolCoins.toNumber(),
-          burned: curve.burned.toNumber(),
-          boughtBack: curve.boughtBack.toNumber(),
-          buybackPending: raw.buybackAccrued.toNumber(),
-          deadline: curve.deadline.toNumber() * 1_000,
+          rebatedCoins: curve.rebatedCoins.toNumber(),
+          rebatedUsdc: curve.rebatedUsdc.toNumber(),
           held,
         }
       : undefined,
@@ -117,7 +117,6 @@ function toMachine(raw: RawMachine, curve: RawCurve | null, owner: PublicKey | n
 
 // Program errors the UI has its own wording for
 const PROGRAM_ERRORS: Record<string, Key> = {
-  NotLive: "err.notLive",
   MarketClosed: "err.marketClosed",
   CreatorCap: "err.creatorCap",
   EarlyCap: "err.earlyCap",
@@ -153,6 +152,7 @@ const EMPTY: GachaState = {
   dryStreak: 0,
   totalSpent: 0,
   totalWon: 0,
+  pool: { prizePool: 0, totalPulls: 0, jackpots: 0 },
   machines: [],
   packs: [],
   recent: [],
@@ -198,13 +198,15 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
     const tp = owner ? await usdcProgram() : null;
     const usdcAta = owner && tp ? getAssociatedTokenAddressSync(usdcMint, owner, false, tp) : null;
 
-    // One call for the registry counter and the wallet's own accounts
+    // One call for the registry counter, the shared vault and the wallet's own accounts
     const base = await connection.getMultipleAccountsInfo([
       pda(Buffer.from("registry")),
+      vaultAccounts().vault,
       ...(owner && usdcAta ? [pda(Buffer.from("player"), owner.toBuffer()), usdcAta] : []),
     ]);
     const registry = decode<Awaited<ReturnType<Accounts["registry"]["fetch"]>>>("registry", base[0]);
-    const player = decode<Awaited<ReturnType<Accounts["player"]["fetch"]>>>("player", base[1]);
+    const vault = decode<RawVault>("vault", base[1]);
+    const player = decode<Awaited<ReturnType<Accounts["player"]["fetch"]>>>("player", base[2]);
 
     let mine = known.current;
     if (owner) {
@@ -241,7 +243,7 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
     const n = keys.length;
     const idByKey = new Map<string, string>();
     const machines = keys.flatMap((k, i) => {
-      const raw = decode<RawMachine>("machine", infos[i]);
+      const raw = infos[i]?.data.length === MACHINE_ACCOUNT_SIZE ? decode<RawMachine>("machine", infos[i]) : null;
       if (!raw) return [];
       idByKey.set(k.machine.toBase58(), raw.id.toString());
       const coin = owner ? infos[2 * n + i] : null;
@@ -250,6 +252,7 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
     machinesRef.current = machines;
 
     const next: GachaState = { ...EMPTY, ready: true, connected: !!owner, machines };
+    if (vault) next.pool = { prizePool: vault.prizePool.toNumber(), totalPulls: vault.totalPulls.toNumber(), jackpots: vault.jackpotsWon };
     if (owner && mine) {
       const packInfos = infos.slice(infos.length - packKeys.length);
       next.packs = packKeys.flatMap((key, i) => {
@@ -258,7 +261,7 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
         if (!raw) mine.packs.delete(key.toBase58());
         return raw ? [toPack(key, raw, idByKey.get(raw.machine.toBase58()) ?? "")] : [];
       });
-      next.usdc = base[2] ? Number(base[2].data.readBigUInt64LE(64)) : 0;
+      next.usdc = base[3] ? Number(base[3].data.readBigUInt64LE(64)) : 0;
       next.dryStreak = player?.dryStreak ?? 0;
       next.totalSpent = player?.totalSpent.toNumber() ?? 0;
       next.totalWon = player?.totalWon.toNumber() ?? 0;
@@ -339,11 +342,13 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
           .accountsPartial({
             payer: user,
             user,
+            ...vaultAccounts(),
             machine: a.machine,
+            // The callback buys the machine coin for the player, so launchpad machines bring their curve
+            curve: "official" in machine.kind ? null : a.curve,
             season: pda(Buffer.from("season"), u16le(machine.season)),
             pack: packKey,
             userUsdc: getAssociatedTokenAddressSync(usdcMint, user, false, tp),
-            poolToken: a.poolToken,
             usdcMint,
             tokenProgram: tp,
             oracleQueue: ORACLE_QUEUE,
@@ -382,18 +387,25 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
       const user = need();
       const raw = await program.account.pack.fetch(packKey);
       const tp = await usdcProgram();
+      // Coins the pulls bought are minted with the claim, into the owner's own token account
+      const coinMint = raw.coins.isZero() ? null : pda(Buffer.from("coin"), raw.machine.toBuffer());
+      const userCoin = coinMint && getAssociatedTokenAddressSync(coinMint, user);
       return {
         raw,
+        pre: coinMint && userCoin ? [createAssociatedTokenAccountIdempotentInstruction(user, userCoin, user, coinMint)] : [],
         accounts: {
           owner: user,
           season: pda(Buffer.from("season"), u16le(raw.season)),
+          ...vaultAccounts(),
           machine: raw.machine,
           pack: packKey,
           rentPayer: raw.rentPayer,
           userUsdc: getAssociatedTokenAddressSync(usdcMint, user, false, tp),
-          poolToken: pda(Buffer.from("machine_pool"), raw.machine.toBuffer()),
           usdcMint,
           tokenProgram: tp,
+          coinMint,
+          userCoin,
+          coinTokenProgram: TOKEN_PROGRAM_ID,
         },
       };
     },
@@ -403,10 +415,10 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
   const claim = useCallback(
     async (packId: string, as: ClaimAs) => {
       const user = need();
-      const { raw, accounts } = await packAccounts(new PublicKey(packId));
+      const { raw, pre, accounts } = await packAccounts(new PublicKey(packId));
 
       if (as === "usdc") {
-        await send(() => program.methods.claim().accountsPartial(accounts).rpc());
+        await send(() => program.methods.claim().accountsPartial(accounts).preInstructions(pre).rpc());
         await settle();
         return;
       }
@@ -441,7 +453,7 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
           .filter((x): x is AddressLookupTableAccount => !!x);
         const ixs = [
           ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }),
-          ...(first ? [claimIx] : []),
+          ...(first ? [...pre, claimIx] : []),
           ...(swap.setupInstructions as JupIx[]).map(fromJup),
           fromJup(swap.swapInstruction),
           ...(swap.cleanupInstruction ? [fromJup(swap.cleanupInstruction)] : []),
@@ -491,13 +503,14 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
           .accountsPartial({
             creator,
             season: pda(Buffer.from("season"), u16le(config.activeSeason)),
+            ...vaultAccounts(),
             ...machineAccounts(id),
             creatorUsdc: getAssociatedTokenAddressSync(usdcMint, creator, false, tp),
             usdcMint,
             tokenProgram: tp,
             coinTokenProgram: TOKEN_PROGRAM_ID,
           })
-          // Creating the machine, its coin mint, curve and token account in one go needs more than the default budget
+          // Creating the machine, its coin mint and its curve in one go needs more than the default budget
           .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 })])
           .rpc(),
       );
@@ -514,6 +527,7 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
       const tp = await usdcProgram();
       return {
         user,
+        ...vaultAccounts(),
         ...a,
         userCoin: getAssociatedTokenAddressSync(a.coinMint, user),
         userUsdc: getAssociatedTokenAddressSync(usdcMint, user, false, tp),
@@ -530,7 +544,7 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
   const market = (machineId: string) => {
     const m = machinesRef.current.find((x) => x.id === machineId);
     if (!m?.coin) throw new GachaError("err.marketClosed");
-    return { status: m.status, coin: m.coin };
+    return m.coin;
   };
 
   const coinBuy = useCallback(
@@ -553,34 +567,18 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
     [program, settle, tradeAccounts],
   );
 
-  const crankBuyback = useCallback(
-    async (machineId: string) => {
-      const a = machineAccounts(machineId);
-      await send(() => program.methods.crankBuyback(new BN(0)).accountsPartial({ payer: need(), machine: a.machine, curve: a.curve }).rpc());
-      await settle();
-    },
-    [need, program, settle],
-  );
-
   const withdrawFees = useCallback(
     async (machineId: string) => {
       const payer = need();
       const a = machineAccounts(machineId);
       const tp = await usdcProgram();
-      const [config, machine] = await Promise.all([
-        program.account.config.fetch(pda(Buffer.from("config"))),
-        program.account.machine.fetch(a.machine),
-      ]);
-      const treasuryUsdc = getAssociatedTokenAddressSync(usdcMint, config.treasury, true, tp);
+      const machine = await program.account.machine.fetch(a.machine);
       const creatorUsdc = getAssociatedTokenAddressSync(usdcMint, machine.creator, true, tp);
       await send(() =>
         program.methods
-          .withdrawFees()
-          .accountsPartial({ payer, machine: a.machine, poolToken: a.poolToken, treasuryUsdc, creatorUsdc, usdcMint, tokenProgram: tp })
-          .preInstructions([
-            createAssociatedTokenAccountIdempotentInstruction(payer, treasuryUsdc, config.treasury, usdcMint, tp),
-            createAssociatedTokenAccountIdempotentInstruction(payer, creatorUsdc, machine.creator, usdcMint, tp),
-          ])
+          .withdrawCreatorFees()
+          .accountsPartial({ payer, ...vaultAccounts(), machine: a.machine, creatorUsdc, usdcMint, tokenProgram: tp })
+          .preInstructions([createAssociatedTokenAccountIdempotentInstruction(payer, creatorUsdc, machine.creator, usdcMint, tp)])
           .rpc(),
       );
       await settle();
@@ -609,12 +607,11 @@ function ChainGacha({ children }: { children: React.ReactNode }) {
       launchMachine,
       coinBuy,
       coinSell,
-      crankBuyback,
       withdrawFees,
       connect: () => setVisible(true),
       ...(CHAIN.cluster === "devnet" ? { faucet } : {}),
     }),
-    [state, recent, buy, claim, refund, launchMachine, coinBuy, coinSell, crankBuyback, withdrawFees, faucet, setVisible],
+    [state, recent, buy, claim, refund, launchMachine, coinBuy, coinSell, withdrawFees, faucet, setVisible],
   );
   return <GachaContext.Provider value={api}>{children}</GachaContext.Provider>;
 }

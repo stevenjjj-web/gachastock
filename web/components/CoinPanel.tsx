@@ -2,12 +2,11 @@
 
 import { useState } from "react";
 import { COIN, MARKET, USDC } from "@/lib/config";
-import { coinPrice, quoteBuy, quoteSell } from "@/lib/engine";
-import { duration, usd } from "@/lib/format";
+import { coinPrice, quoteBuy, quoteRebate, quoteSell } from "@/lib/engine";
+import { usd } from "@/lib/format";
 import { useGacha } from "@/lib/gacha-context";
 import { useI18n } from "@/lib/i18n";
 import type { MachineInfo } from "@/lib/types";
-import { useNow } from "@/lib/use-now";
 
 /** Coin amounts shortened to K / M. */
 export const coins = (base: number) => {
@@ -25,22 +24,17 @@ type Market = MachineInfo & { coin: NonNullable<MachineInfo["coin"]> };
 export function CoinPanel({ m }: { m: Market }) {
   const g = useGacha();
   const { t, err } = useI18n();
-  const now = useNow();
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const { coin } = m;
-  const expired = m.status === "curve" && now > 0 && now > coin.deadline;
-  const canBuy = m.status === "live" || (m.status === "curve" && !expired);
-  // Once buying is closed the only thing left to do is sell
-  const active = canBuy ? side : "sell";
 
   const value = Number(amount) || 0;
   const usdcIn = Math.floor(value * USDC);
   const coinsIn = Math.min(Math.floor(value * COIN), coin.held);
-  const buyQuote = quoteBuy(m, usdcIn);
-  const sellQuote = quoteSell(expired ? { ...m, status: "failed" } : m, coinsIn);
+  const buyQuote = quoteBuy(coin, usdcIn);
+  const sellQuote = quoteSell(coin, coinsIn);
 
   const act = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -57,74 +51,52 @@ export function CoinPanel({ m }: { m: Market }) {
   };
 
   const raisedPct = Math.min(100, (coin.marketUsdc / MARKET.target) * 100);
-  const rows: [string, string][] =
-    m.status === "live"
-      ? [
-          [t("coin.pool"), `$${usd(coin.marketUsdc, 0)}`],
-          [t("coin.boughtBack"), `$${usd(coin.boughtBack)}`],
-          [t("coin.burned"), `${coins(coin.burned)} ${m.symbol}`],
-        ]
-      : [[t("coin.raised"), `$${usd(coin.marketUsdc, 0)} / $${usd(MARKET.target, 0)}`]];
+  const rows: [string, string][] = [
+    coin.graduated ? [t("coin.pool"), `$${usd(coin.marketUsdc, 0)}`] : [t("coin.raised"), `$${usd(coin.marketUsdc, 0)} / $${usd(MARKET.target, 0)}`],
+    [t("coin.rebated"), `${coins(coin.rebatedCoins)} ${m.symbol} · $${usd(coin.rebatedUsdc, 0)}`],
+    [t("coin.perPull"), `${coins(quoteRebate(coin))} ${m.symbol}`],
+    [t("coin.holding"), `${coins(coin.held)} ${m.symbol}`],
+  ];
 
   return (
     <section className="panel p-4">
       <div className="mb-3 flex items-center gap-2">
         <h2 className="label">{t("coin.title")}</h2>
         <span className="font-mono text-sm text-subtle">${m.symbol}</span>
-        <span className="ml-auto font-mono text-lg font-bold">{priceText(coinPrice(m))}</span>
+        <span className="ml-auto font-mono text-lg font-bold">{priceText(coinPrice(coin))}</span>
       </div>
 
-      {m.status !== "live" && (
+      {!coin.graduated && (
         <div className="mb-3">
           <div className="h-2 overflow-hidden rounded-full bg-surface-2">
             <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${raisedPct}%` }} />
           </div>
-          <p className="mt-1.5 flex justify-between text-xs text-subtle">
-            <span>{t("coin.progress", { pct: Math.floor(raisedPct) })}</span>
-            {m.status === "curve" && now > 0 && !expired && <span>{t("coin.endsIn", { t: duration(coin.deadline - now) })}</span>}
-          </p>
+          <p className="mt-1.5 text-xs text-subtle">{t("coin.progress", { pct: Math.floor(raisedPct) })}</p>
         </div>
       )}
 
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+      <dl className="flex flex-col gap-1.5 text-sm">
         {rows.map(([k, v]) => (
-          <div key={k} className="col-span-2 flex justify-between">
+          <div key={k} className="flex justify-between gap-3">
             <dt className="text-subtle">{k}</dt>
-            <dd className="font-mono font-bold">{v}</dd>
+            <dd className="text-right font-mono font-bold">{v}</dd>
           </div>
         ))}
-        <div className="col-span-2 flex justify-between">
-          <dt className="text-subtle">{t("coin.holding")}</dt>
-          <dd className="font-mono font-bold">
-            {coins(coin.held)} {m.symbol}
-          </dd>
-        </div>
       </dl>
 
-      {m.status === "live" && (
-        <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2 text-sm">
-          <span className="text-subtle">
-            {t("coin.pending")} <span className="font-mono font-bold text-ink">${usd(coin.buybackPending)}</span>
-          </span>
-          <button className="btn btn-sm btn-dark" disabled={busy || coin.buybackPending === 0 || !g.connected} onClick={() => act(() => g.crankBuyback(m.id))}>
-            {t("coin.crank")}
-          </button>
-        </div>
-      )}
-
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <button aria-pressed={active === "buy"} className="chip justify-center" disabled={!canBuy} onClick={() => setSide("buy")}>
-          {canBuy ? t("coin.buy") : t("coin.closed")}
+        <button aria-pressed={side === "buy"} className="chip justify-center" onClick={() => setSide("buy")}>
+          {t("coin.buy")}
         </button>
-        <button aria-pressed={active === "sell"} className="chip justify-center" onClick={() => setSide("sell")}>
+        <button aria-pressed={side === "sell"} className="chip justify-center" onClick={() => setSide("sell")}>
           {t("coin.sell")}
         </button>
       </div>
 
       <label className="mt-3 block">
         <span className="label mb-1.5 flex justify-between text-subtle">
-          {active === "buy" ? t("coin.amountUsdc") : t("coin.amountCoins", { sym: m.symbol })}
-          {active === "sell" && coin.held > 0 && (
+          {side === "buy" ? t("coin.amountUsdc") : t("coin.amountCoins", { sym: m.symbol })}
+          {side === "sell" && coin.held > 0 && (
             <button type="button" className="text-accent" onClick={() => setAmount(String(coin.held / COIN))}>
               {t("coin.max")}
             </button>
@@ -132,7 +104,7 @@ export function CoinPanel({ m }: { m: Market }) {
         </span>
         <input className="input font-mono" inputMode="decimal" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} />
       </label>
-      {active === "buy" && (
+      {side === "buy" && (
         <div className="mt-2 flex gap-2">
           {[10, 50, 100].map((v) => (
             <button key={v} className="chip !h-8 flex-1 justify-center font-mono !text-xs" onClick={() => setAmount(String(v))}>
@@ -144,14 +116,14 @@ export function CoinPanel({ m }: { m: Market }) {
 
       <p className="mt-3 flex justify-between text-sm">
         <span className="text-subtle">{t("coin.youGet")}</span>
-        <span className="font-mono font-bold">{active === "buy" ? `${coins(buyQuote.coins)} ${m.symbol}` : `$${usd(sellQuote)}`}</span>
+        <span className="font-mono font-bold">{side === "buy" ? `${coins(buyQuote.coins)} ${m.symbol}` : `$${usd(sellQuote)}`}</span>
       </p>
 
       {!g.connected ? (
         <button className="btn mt-3 w-full" onClick={g.connect} disabled={!g.connect}>
           {t("wallet.connect")}
         </button>
-      ) : active === "buy" ? (
+      ) : side === "buy" ? (
         <button
           className="btn mt-3 w-full"
           disabled={busy || buyQuote.coins <= 0 || buyQuote.cost > g.usdc}
@@ -166,7 +138,7 @@ export function CoinPanel({ m }: { m: Market }) {
       )}
       {error && <p className="mt-2 text-sm text-failure">{error}</p>}
       <p className="mt-3 text-xs leading-relaxed text-subtle">
-        {m.status === "failed" || expired ? t("coin.feeNone") : t("coin.fee")} · {t("coin.warn")}
+        {t("coin.fee")} · {t("coin.warn")}
       </p>
     </section>
   );

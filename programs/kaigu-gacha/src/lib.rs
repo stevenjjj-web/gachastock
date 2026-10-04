@@ -1,10 +1,10 @@
 //! GachaStock: gacha machines for tokenized US stocks on Solana.
 //!
-//! Tickets only, never the house: every machine holds only USDC and pays prizes from its own
-//! player-funded pool. Randomness comes from MagicBlock VRF; the draw happens in the callback,
-//! which only touches the ledger. Anyone can launch a machine together with a machine coin
-//! that sells on a bonding curve, seeds the prize pool at graduation, and is bought back and
-//! burned with part of every pull's fee.
+//! Tickets only, never the house: the program holds only USDC and pays prizes from one
+//! player-funded pool that every machine shares. Randomness comes from MagicBlock VRF; the
+//! draw happens in the callback, which only touches the ledgers. Anyone can launch a machine
+//! together with a machine coin. Part of every pull's fee buys that coin for the player who
+//! pulled, so playing a machine is also how you come to own a piece of it.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::hash::hashv;
@@ -72,7 +72,17 @@ pub mod kaigu_gacha {
         Ok(())
     }
 
-    /// Creates an official machine: open immediately, no machine coin, whole fee to the protocol.
+    /// Opens the shared vault: the one prize pool and the one USDC account of the program.
+    pub fn init_vault(ctx: Context<InitVault>) -> Result<()> {
+        ctx.accounts.vault.set_inner(Vault {
+            token: ctx.accounts.vault_token.key(),
+            bump: ctx.bumps.vault,
+            ..Default::default()
+        });
+        Ok(())
+    }
+
+    /// Creates an official machine: no machine coin and no creator.
     pub fn create_machine(ctx: Context<CreateMachine>, args: MachineArgs) -> Result<()> {
         validate_machine_args(&args, ctx.accounts.season.whitelist.len())?;
         let registry = &mut ctx.accounts.registry;
@@ -82,11 +92,9 @@ pub mod kaigu_gacha {
         ctx.accounts.machine.set_inner(new_machine(
             id,
             MachineKind::Official,
-            MachineStatus::Live,
             ctx.accounts.admin.key(),
             ctx.accounts.season.id,
             args,
-            ctx.accounts.pool_token.key(),
             Pubkey::default(),
             ctx.bumps.machine,
         ));
@@ -102,12 +110,11 @@ pub mod kaigu_gacha {
 
     /// Launchpad: anyone can launch a machine and its coin. The creator picks the name,
     /// ticker, art and a stock basket from the whitelist; everything else comes from the
-    /// template and nothing can be changed afterwards. The coin sells on a bonding curve and
-    /// the machine opens once the curve sells out.
+    /// template and nothing can be changed afterwards. The machine is open for pulls right
+    /// away and plays for the shared prize pool; its coin starts on a bonding curve.
     pub fn launch_machine(ctx: Context<LaunchMachine>, args: MachineArgs) -> Result<()> {
         require!(!ctx.accounts.config.paused, GachaError::Paused);
         validate_machine_args(&args, ctx.accounts.season.whitelist.len())?;
-        let clock = Clock::get()?;
 
         token_interface::transfer_checked(
             CpiContext::new(
@@ -115,48 +122,40 @@ pub mod kaigu_gacha {
                 TransferChecked {
                     from: ctx.accounts.creator_usdc.to_account_info(),
                     mint: ctx.accounts.usdc_mint.to_account_info(),
-                    to: ctx.accounts.pool_token.to_account_info(),
+                    to: ctx.accounts.vault_token.to_account_info(),
                     authority: ctx.accounts.creator.to_account_info(),
                 },
             ),
             LAUNCH_FEE,
             ctx.accounts.usdc_mint.decimals,
         )?;
+        let vault = &mut ctx.accounts.vault;
+        vault.protocol_fees = vault
+            .protocol_fees
+            .checked_add(LAUNCH_FEE)
+            .ok_or(GachaError::Overflow)?;
 
         let registry = &mut ctx.accounts.registry;
         let id = registry.machine_count;
         registry.machine_count = id.checked_add(1).ok_or(GachaError::Overflow)?;
         registry.bump = ctx.bumps.registry;
 
-        let mut machine = new_machine(
+        ctx.accounts.machine.set_inner(new_machine(
             id,
             MachineKind::Launchpad,
-            MachineStatus::Curve,
             ctx.accounts.creator.key(),
             ctx.accounts.season.id,
             args,
-            ctx.accounts.pool_token.key(),
             ctx.accounts.coin_mint.key(),
             ctx.bumps.machine,
-        );
-        machine.protocol_fees = LAUNCH_FEE;
-        ctx.accounts.machine.set_inner(machine);
+        ));
         ctx.accounts.curve.set_inner(Curve {
             machine: ctx.accounts.machine.key(),
-            deadline: clock
-                .unix_timestamp
-                .checked_add(SALE_SECS)
-                .ok_or(GachaError::Overflow)?,
-            launch_slot: clock.slot,
-            sold: 0,
-            creator_bought: 0,
-            pool_coins: 0,
-            burned: 0,
-            bought_back: 0,
-            graduated_at: 0,
+            launch_slot: Clock::get()?.slot,
             bump: ctx.bumps.curve,
+            ..Default::default()
         });
-        assert_solvent(&mut ctx.accounts.pool_token, &ctx.accounts.machine)?;
+        assert_solvent(&mut ctx.accounts.vault_token, &ctx.accounts.vault)?;
         emit!(MachineCreated {
             machine: ctx.accounts.machine.key(),
             id,
@@ -169,8 +168,7 @@ pub mod kaigu_gacha {
 
     /// Buys the machine coin with at most `usdc_in` (fee included). Before graduation this
     /// trades on the bonding curve; the purchase that sells the last curve coin graduates the
-    /// machine: 4,000 USDC of the raise seeds its prize pool and the rest backs the trading
-    /// pool. After graduation it trades against that pool.
+    /// coin and the whole raise becomes its pool. After graduation it trades against that pool.
     pub fn coin_buy(ctx: Context<CoinTrade>, usdc_in: u64, min_coins_out: u64) -> Result<()> {
         require!(!ctx.accounts.config.paused, GachaError::Paused);
         require!(usdc_in > 0, GachaError::TooSmall);
@@ -179,27 +177,22 @@ pub mod kaigu_gacha {
         let c = &ctx.accounts.curve;
         let user = ctx.accounts.user.key();
 
-        let (coins_out, net, fee) = match m.status {
-            MachineStatus::Curve => {
-                require!(clock.unix_timestamp <= c.deadline, GachaError::MarketClosed);
-                if clock.slot < c.launch_slot.saturating_add(EARLY_SLOTS) {
-                    require!(usdc_in <= EARLY_MAX_USDC, GachaError::EarlyCap);
-                }
-                let q = curve_buy(m.market_usdc, c.sold, usdc_in)?;
-                if user == m.creator {
-                    require!(
-                        c.creator_bought.saturating_add(q.coins_out) <= CREATOR_MAX_COINS,
-                        GachaError::CreatorCap
-                    );
-                }
-                (q.coins_out, q.net, q.fee)
+        let (coins_out, net, fee) = if c.graduated {
+            let fee = bps(usdc_in, TRADE_FEE_BPS);
+            let net = usdc_in - fee;
+            (pool_buy(m.market_usdc, c.pool_coins, net), net, fee)
+        } else {
+            if clock.slot < c.launch_slot.saturating_add(EARLY_SLOTS) {
+                require!(usdc_in <= EARLY_MAX_USDC, GachaError::EarlyCap);
             }
-            MachineStatus::Live => {
-                let fee = bps(usdc_in, TRADE_FEE_BPS);
-                let net = usdc_in - fee;
-                (pool_buy(m.market_usdc, c.pool_coins, net), net, fee)
+            let q = curve_buy(m.market_usdc, c.sold, usdc_in)?;
+            if user == m.creator {
+                require!(
+                    c.creator_bought.saturating_add(q.coins_out) <= CREATOR_MAX_COINS,
+                    GachaError::CreatorCap
+                );
             }
-            MachineStatus::Failed => return err!(GachaError::MarketClosed),
+            (q.coins_out, q.net, q.fee)
         };
         require!(coins_out > 0, GachaError::TooSmall);
         require!(coins_out >= min_coins_out, GachaError::Slippage);
@@ -211,7 +204,7 @@ pub mod kaigu_gacha {
                 TransferChecked {
                     from: ctx.accounts.user_usdc.to_account_info(),
                     mint: ctx.accounts.usdc_mint.to_account_info(),
-                    to: ctx.accounts.pool_token.to_account_info(),
+                    to: ctx.accounts.vault_token.to_account_info(),
                     authority: ctx.accounts.user.to_account_info(),
                 },
             ),
@@ -231,33 +224,26 @@ pub mod kaigu_gacha {
             coins_out,
         )?;
 
+        let v = &mut ctx.accounts.vault;
         let m = &mut ctx.accounts.machine;
         let c = &mut ctx.accounts.curve;
         m.market_usdc = m.market_usdc.checked_add(net).ok_or(GachaError::Overflow)?;
-        m.protocol_fees = m.protocol_fees.checked_add(fee).ok_or(GachaError::Overflow)?;
-        match m.status {
-            MachineStatus::Curve => {
-                c.sold = c.sold.checked_add(coins_out).ok_or(GachaError::Overflow)?;
-                if user == m.creator {
-                    c.creator_bought = c.creator_bought.saturating_add(coins_out);
-                }
-                if c.sold == CURVE_SUPPLY {
-                    let (seed, pool_usdc, pool_coins) = graduation_split(m.market_usdc)?;
-                    m.prize_pool = m.prize_pool.checked_add(seed).ok_or(GachaError::Overflow)?;
-                    m.market_usdc = pool_usdc;
-                    m.status = MachineStatus::Live;
-                    c.pool_coins = pool_coins;
-                    c.graduated_at = clock.unix_timestamp;
-                    emit!(MachineGraduated {
-                        machine: m.key(),
-                        seed,
-                        pool_usdc,
-                        pool_coins,
-                    });
-                }
+        v.markets = v.markets.checked_add(net).ok_or(GachaError::Overflow)?;
+        v.protocol_fees = v.protocol_fees.checked_add(fee).ok_or(GachaError::Overflow)?;
+        if c.graduated {
+            c.pool_coins = c.pool_coins.checked_sub(coins_out).ok_or(GachaError::Insolvent)?;
+        } else {
+            c.sold = c.sold.checked_add(coins_out).ok_or(GachaError::Overflow)?;
+            if user == m.creator {
+                c.creator_bought = c.creator_bought.saturating_add(coins_out);
             }
-            _ => {
-                c.pool_coins = c.pool_coins.checked_sub(coins_out).ok_or(GachaError::Insolvent)?;
+            if c.sold == CURVE_SUPPLY {
+                graduate(m.market_usdc, c, clock.unix_timestamp)?;
+                emit!(MachineGraduated {
+                    machine: m.key(),
+                    pool_usdc: m.market_usdc,
+                    pool_coins: c.pool_coins,
+                });
             }
         }
         emit!(CoinTraded {
@@ -268,48 +254,38 @@ pub mod kaigu_gacha {
             coins: coins_out,
             fee,
         });
-        assert_solvent(&mut ctx.accounts.pool_token, &ctx.accounts.machine)
+        assert_solvent(&mut ctx.accounts.vault_token, &ctx.accounts.vault)
     }
 
-    /// Sells machine coins. On the curve this pays the curve price; if the curve missed its
-    /// deadline the machine is marked failed and holders sell back along the curve with no
-    /// fee. After graduation it trades against the pool.
+    /// Sells machine coins back to the curve or, after graduation, to the pool. Not affected by pause.
     pub fn coin_sell(ctx: Context<CoinTrade>, coins_in: u64, min_usdc_out: u64) -> Result<()> {
         require!(coins_in > 0, GachaError::TooSmall);
-        let now = Clock::get()?.unix_timestamp;
+        let v = &mut ctx.accounts.vault;
         let m = &mut ctx.accounts.machine;
         let c = &mut ctx.accounts.curve;
         let user = ctx.accounts.user.key();
-        if m.status == MachineStatus::Curve && now > c.deadline {
-            m.status = MachineStatus::Failed;
-        }
 
-        let (gross, fee) = match m.status {
-            MachineStatus::Curve | MachineStatus::Failed => {
-                let gross = curve_sell(m.market_usdc, c.sold, coins_in)?;
-                c.sold -= coins_in;
-                if user == m.creator {
-                    c.creator_bought = c.creator_bought.saturating_sub(coins_in);
-                }
-                let fee = if m.status == MachineStatus::Failed {
-                    0
-                } else {
-                    bps(gross, TRADE_FEE_BPS)
-                };
-                (gross, fee)
+        let gross = if c.graduated {
+            let gross = pool_sell(m.market_usdc, c.pool_coins, coins_in);
+            c.pool_coins = c.pool_coins.checked_add(coins_in).ok_or(GachaError::Overflow)?;
+            gross
+        } else {
+            let gross = curve_sell(m.market_usdc, c.sold, coins_in)?;
+            c.sold -= coins_in;
+            if user == m.creator {
+                c.creator_bought = c.creator_bought.saturating_sub(coins_in);
             }
-            MachineStatus::Live => {
-                let gross = pool_sell(m.market_usdc, c.pool_coins, coins_in);
-                c.pool_coins = c.pool_coins.checked_add(coins_in).ok_or(GachaError::Overflow)?;
-                (gross, bps(gross, TRADE_FEE_BPS))
-            }
+            gross
         };
+        let fee = bps(gross, TRADE_FEE_BPS);
         let out = gross - fee;
         require!(out > 0, GachaError::TooSmall);
         require!(out >= min_usdc_out, GachaError::Slippage);
+        // A machine can only ever pay out of its own market
         m.market_usdc = m.market_usdc.checked_sub(gross).ok_or(GachaError::Insolvent)?;
-        m.protocol_fees = m.protocol_fees.checked_add(fee).ok_or(GachaError::Overflow)?;
-        let (id, bump) = (m.id, m.bump);
+        v.markets = v.markets.checked_sub(gross).ok_or(GachaError::Insolvent)?;
+        v.protocol_fees = v.protocol_fees.checked_add(fee).ok_or(GachaError::Overflow)?;
+        let vault_bump = v.bump;
 
         token::burn(
             CpiContext::new(
@@ -322,14 +298,13 @@ pub mod kaigu_gacha {
             ),
             coins_in,
         )?;
-        transfer_from_machine(
+        transfer_from_vault(
             &ctx.accounts.token_program,
-            &ctx.accounts.pool_token,
+            &ctx.accounts.vault_token,
             &ctx.accounts.usdc_mint,
             &ctx.accounts.user_usdc,
-            &ctx.accounts.machine,
-            id,
-            bump,
+            &ctx.accounts.vault,
+            vault_bump,
             out,
         )?;
         emit!(CoinTraded {
@@ -340,32 +315,7 @@ pub mod kaigu_gacha {
             coins: coins_in,
             fee,
         });
-        assert_solvent(&mut ctx.accounts.pool_token, &ctx.accounts.machine)
-    }
-
-    /// Spends accrued buyback funds on the machine coin and burns what it buys. Anyone can
-    /// crank it; each call is capped so buybacks land in small pieces.
-    pub fn crank_buyback(ctx: Context<CrankBuyback>, min_coins_out: u64) -> Result<()> {
-        let m = &mut ctx.accounts.machine;
-        let c = &mut ctx.accounts.curve;
-        require!(m.status == MachineStatus::Live, GachaError::NotLive);
-        let amount = m.buyback_accrued.min(MAX_BUYBACK_PER_CRANK);
-        require!(amount > 0, GachaError::NothingToWithdraw);
-        let coins = pool_buy(m.market_usdc, c.pool_coins, amount);
-        require!(coins > 0, GachaError::TooSmall);
-        require!(coins >= min_coins_out, GachaError::Slippage);
-        // The bought coins were never minted, so taking them out of the pool burns them.
-        m.buyback_accrued -= amount;
-        m.market_usdc = m.market_usdc.checked_add(amount).ok_or(GachaError::Overflow)?;
-        c.pool_coins -= coins;
-        c.burned = c.burned.checked_add(coins).ok_or(GachaError::Overflow)?;
-        c.bought_back = c.bought_back.checked_add(amount).ok_or(GachaError::Overflow)?;
-        emit!(BuybackBurned {
-            machine: m.key(),
-            usdc: amount,
-            coins,
-        });
-        Ok(())
+        assert_solvent(&mut ctx.accounts.vault_token, &ctx.accounts.vault)
     }
 
     /// Takes payment, creates the pack and requests randomness. The full amount stays pending
@@ -378,13 +328,16 @@ pub mod kaigu_gacha {
     ) -> Result<()> {
         require!(!ctx.accounts.config.paused, GachaError::Paused);
         require!(
-            ctx.accounts.machine.status == MachineStatus::Live,
-            GachaError::NotLive
-        );
-        require!(
             count >= 1 && (count as usize) <= MAX_PULLS,
             GachaError::BadCount
         );
+        // The callback buys the machine coin, so a launchpad machine must bring its curve.
+        // An absent optional account is passed as the program id.
+        let curve_key = match (ctx.accounts.machine.kind, &ctx.accounts.curve) {
+            (MachineKind::Launchpad, Some(c)) => c.key(),
+            (MachineKind::Official, _) => crate::ID,
+            _ => return err!(GachaError::BadCoinAccount),
+        };
         let paid = ctx
             .accounts
             .season
@@ -392,22 +345,22 @@ pub mod kaigu_gacha {
             .checked_mul(count as u64)
             .ok_or(GachaError::Overflow)?;
 
-        // 1. Move the full amount into the machine's account as pending
+        // 1. Move the full amount into the vault as pending
         token_interface::transfer_checked(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
                 TransferChecked {
                     from: ctx.accounts.user_usdc.to_account_info(),
                     mint: ctx.accounts.usdc_mint.to_account_info(),
-                    to: ctx.accounts.pool_token.to_account_info(),
+                    to: ctx.accounts.vault_token.to_account_info(),
                     authority: ctx.accounts.user.to_account_info(),
                 },
             ),
             paid,
             ctx.accounts.usdc_mint.decimals,
         )?;
-        let machine = &mut ctx.accounts.machine;
-        machine.pending = machine.pending.checked_add(paid).ok_or(GachaError::Overflow)?;
+        let vault = &mut ctx.accounts.vault;
+        vault.pending = vault.pending.checked_add(paid).ok_or(GachaError::Overflow)?;
 
         // 2. Create the pack
         let pack_key = ctx.accounts.pack.key();
@@ -423,6 +376,7 @@ pub mod kaigu_gacha {
             status: PackStatus::Pending,
             request_slot: Clock::get()?.slot,
             locked_amount: 0,
+            coins: 0,
             results: [PullResult::default(); MAX_PULLS],
             nonce,
             bump: ctx.bumps.pack,
@@ -435,6 +389,11 @@ pub mod kaigu_gacha {
         }
 
         // 3. Request randomness with callback_open and its accounts
+        let meta = |pubkey: Pubkey, is_writable: bool| SerializableAccountMeta {
+            pubkey,
+            is_signer: false,
+            is_writable,
+        };
         let seed = hashv(&[&client_seed, pack_key.as_ref()]).to_bytes();
         let ix = create_request_randomness_ix(RequestRandomnessParams {
             payer: ctx.accounts.payer.key(),
@@ -443,33 +402,19 @@ pub mod kaigu_gacha {
             callback_discriminator: instruction::CallbackOpen::DISCRIMINATOR.to_vec(),
             caller_seed: seed,
             accounts_metas: Some(vec![
-                SerializableAccountMeta {
-                    pubkey: pack_key,
-                    is_signer: false,
-                    is_writable: true,
-                },
-                SerializableAccountMeta {
-                    pubkey: machine_key,
-                    is_signer: false,
-                    is_writable: true,
-                },
-                SerializableAccountMeta {
-                    pubkey: ctx.accounts.season.key(),
-                    is_signer: false,
-                    is_writable: false,
-                },
-                SerializableAccountMeta {
-                    pubkey: ctx.accounts.player.key(),
-                    is_signer: false,
-                    is_writable: true,
-                },
+                meta(pack_key, true),
+                meta(machine_key, true),
+                meta(ctx.accounts.season.key(), false),
+                meta(ctx.accounts.player.key(), true),
+                meta(ctx.accounts.vault.key(), true),
+                meta(curve_key, curve_key != crate::ID),
             ]),
             ..Default::default()
         });
         ctx.accounts
             .invoke_signed_vrf(&ctx.accounts.payer.to_account_info(), &ix)?;
 
-        assert_solvent(&mut ctx.accounts.pool_token, &ctx.accounts.machine)?;
+        assert_solvent(&mut ctx.accounts.vault_token, &ctx.accounts.vault)?;
         emit!(PacksBought {
             pack: pack_key,
             machine: machine_key,
@@ -480,22 +425,35 @@ pub mod kaigu_gacha {
         Ok(())
     }
 
-    /// Draw callback. Callable only by the MagicBlock VRF identity; it only updates the ledger and moves no tokens.
+    /// Draw callback. Callable only by the MagicBlock VRF identity; it only updates the ledgers and moves no tokens.
     pub fn callback_open(ctx: Context<CallbackOpen>, randomness: [u8; 32]) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
         let season = &ctx.accounts.season;
+        let vault = &mut ctx.accounts.vault;
         let machine = &mut ctx.accounts.machine;
         let pack = &mut ctx.accounts.pack;
         let player = &mut ctx.accounts.player;
+        let mut curve = ctx.accounts.curve.as_mut();
         require!(pack.status == PackStatus::Pending, GachaError::BadStatus);
+        let was_on_curve = curve.as_ref().is_some_and(|c| !c.graduated);
 
         // A 10-pack requests randomness once and derives each pull from hash(randomness, i)
         for i in 0..pack.count as usize {
             let r = hashv(&[&randomness, &[i as u8]]).to_bytes();
-            let res = draw_one(season, machine, &mut player.dry_streak, &r)?;
+            let (res, coins) = draw_one(
+                season,
+                vault,
+                machine,
+                curve.as_mut().map(|c| &mut ****c),
+                &mut player.dry_streak,
+                &r,
+                now,
+            )?;
             pack.locked_amount = pack
                 .locked_amount
                 .checked_add(res.value)
                 .ok_or(GachaError::Overflow)?;
+            pack.coins = pack.coins.checked_add(coins).ok_or(GachaError::Overflow)?;
             pack.results[i] = res;
         }
         pack.status = PackStatus::Revealed;
@@ -513,6 +471,13 @@ pub mod kaigu_gacha {
             .checked_add(pack.locked_amount)
             .ok_or(GachaError::Overflow)?;
 
+        if let Some(c) = curve.filter(|c| was_on_curve && c.graduated) {
+            emit!(MachineGraduated {
+                machine: machine.key(),
+                pool_usdc: machine.market_usdc,
+                pool_coins: c.pool_coins,
+            });
+        }
         emit!(PackOpened {
             pack: pack.key(),
             machine: machine.key(),
@@ -520,40 +485,67 @@ pub mod kaigu_gacha {
             count: pack.count,
             results: pack.results,
             locked_amount: pack.locked_amount,
-            prize_pool_after: machine.prize_pool,
+            coins: pack.coins,
+            prize_pool_after: vault.prize_pool,
         });
         Ok(())
     }
 
-    /// Sends the locked USDC to the user minus the settlement fee, closes the Pack and returns its rent.
-    /// The frontend can append Jupiter swap instructions in the same transaction to turn the USDC into the pulled stock.
+    /// Sends the locked USDC to the user minus the settlement fee, mints the machine coins the
+    /// pulls bought, closes the Pack and returns its rent. The frontend can append Jupiter swap
+    /// instructions in the same transaction to turn the USDC into the pulled stock.
     pub fn claim(ctx: Context<Claim>) -> Result<()> {
         require!(
             ctx.accounts.pack.status == PackStatus::Revealed,
             GachaError::BadStatus
         );
-        let amount = ctx.accounts.pack.locked_amount;
+        let (amount, coins) = (ctx.accounts.pack.locked_amount, ctx.accounts.pack.coins);
         let fee = bps(amount, ctx.accounts.season.settle_fee_bps);
-        let m = &mut ctx.accounts.machine;
-        m.locked = m.locked.checked_sub(amount).ok_or(GachaError::Overflow)?;
-        m.protocol_fees = m.protocol_fees.checked_add(fee).ok_or(GachaError::Overflow)?;
-        let (id, bump) = (m.id, m.bump);
-        transfer_from_machine(
+        let v = &mut ctx.accounts.vault;
+        v.locked = v.locked.checked_sub(amount).ok_or(GachaError::Overflow)?;
+        v.protocol_fees = v.protocol_fees.checked_add(fee).ok_or(GachaError::Overflow)?;
+        let vault_bump = v.bump;
+        transfer_from_vault(
             &ctx.accounts.token_program,
-            &ctx.accounts.pool_token,
+            &ctx.accounts.vault_token,
             &ctx.accounts.usdc_mint,
             &ctx.accounts.user_usdc,
-            &ctx.accounts.machine,
-            id,
-            bump,
+            &ctx.accounts.vault,
+            vault_bump,
             amount.checked_sub(fee).ok_or(GachaError::Overflow)?,
         )?;
-        assert_solvent(&mut ctx.accounts.pool_token, &ctx.accounts.machine)?;
+
+        if coins > 0 {
+            let m = &ctx.accounts.machine;
+            let (Some(coin_mint), Some(user_coin)) = (&ctx.accounts.coin_mint, &ctx.accounts.user_coin)
+            else {
+                return err!(GachaError::BadCoinAccount);
+            };
+            require!(
+                user_coin.mint == m.coin_mint && user_coin.owner == ctx.accounts.owner.key(),
+                GachaError::BadCoinAccount
+            );
+            token::mint_to(
+                CpiContext::new_with_signer(
+                    ctx.accounts.coin_token_program.to_account_info(),
+                    MintTo {
+                        mint: coin_mint.to_account_info(),
+                        to: user_coin.to_account_info(),
+                        authority: m.to_account_info(),
+                    },
+                    &[&[b"machine", &m.id.to_le_bytes(), &[m.bump]]],
+                ),
+                coins,
+            )?;
+        }
+
+        assert_solvent(&mut ctx.accounts.vault_token, &ctx.accounts.vault)?;
         emit!(PackClaimed {
             pack: ctx.accounts.pack.key(),
             owner: ctx.accounts.owner.key(),
             amount,
             settle_fee: fee,
+            coins,
         });
         Ok(())
     }
@@ -569,20 +561,19 @@ pub mod kaigu_gacha {
         require!(Clock::get()?.slot > deadline, GachaError::TooEarly);
         let paid = pack.paid;
 
-        let m = &mut ctx.accounts.machine;
-        m.pending = m.pending.checked_sub(paid).ok_or(GachaError::Overflow)?;
-        let (id, bump) = (m.id, m.bump);
-        transfer_from_machine(
+        let v = &mut ctx.accounts.vault;
+        v.pending = v.pending.checked_sub(paid).ok_or(GachaError::Overflow)?;
+        let vault_bump = v.bump;
+        transfer_from_vault(
             &ctx.accounts.token_program,
-            &ctx.accounts.pool_token,
+            &ctx.accounts.vault_token,
             &ctx.accounts.usdc_mint,
             &ctx.accounts.user_usdc,
-            &ctx.accounts.machine,
-            id,
-            bump,
+            &ctx.accounts.vault,
+            vault_bump,
             paid,
         )?;
-        assert_solvent(&mut ctx.accounts.pool_token, &ctx.accounts.machine)?;
+        assert_solvent(&mut ctx.accounts.vault_token, &ctx.accounts.vault)?;
         emit!(PackRefunded {
             pack: ctx.accounts.pack.key(),
             owner: ctx.accounts.owner.key(),
@@ -591,34 +582,72 @@ pub mod kaigu_gacha {
         Ok(())
     }
 
-    /// Pays a machine's accrued fees to their fixed destinations: the protocol's share to the
-    /// treasury and the creator's share to the creator. Anyone can crank it. No instruction
-    /// can touch the prize pool, locked prizes, pending payments or the coin market's USDC.
-    pub fn withdraw_fees(ctx: Context<WithdrawFees>) -> Result<()> {
+    /// Adds USDC to the shared prize pool. Anyone can do it; it cannot be taken back out
+    /// except as prizes.
+    pub fn fund_pool(ctx: Context<FundPool>, amount: u64) -> Result<()> {
+        require!(amount > 0, GachaError::TooSmall);
+        token_interface::transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.funder_usdc.to_account_info(),
+                    mint: ctx.accounts.usdc_mint.to_account_info(),
+                    to: ctx.accounts.vault_token.to_account_info(),
+                    authority: ctx.accounts.funder.to_account_info(),
+                },
+            ),
+            amount,
+            ctx.accounts.usdc_mint.decimals,
+        )?;
+        let v = &mut ctx.accounts.vault;
+        v.prize_pool = v.prize_pool.checked_add(amount).ok_or(GachaError::Overflow)?;
+        emit!(PoolFunded {
+            funder: ctx.accounts.funder.key(),
+            amount,
+            prize_pool_after: v.prize_pool,
+        });
+        assert_solvent(&mut ctx.accounts.vault_token, &ctx.accounts.vault)
+    }
+
+    /// Pays the protocol's accrued fees to the treasury. Anyone can crank it. No instruction
+    /// can take the prize pool, locked prizes, pending payments or a coin market's USDC.
+    pub fn withdraw_protocol_fees(ctx: Context<WithdrawProtocolFees>) -> Result<()> {
+        let v = &mut ctx.accounts.vault;
+        let amount = v.protocol_fees;
+        require!(amount > 0, GachaError::NothingToWithdraw);
+        v.protocol_fees = 0;
+        let vault_bump = v.bump;
+        transfer_from_vault(
+            &ctx.accounts.token_program,
+            &ctx.accounts.vault_token,
+            &ctx.accounts.usdc_mint,
+            &ctx.accounts.treasury_usdc,
+            &ctx.accounts.vault,
+            vault_bump,
+            amount,
+        )?;
+        assert_solvent(&mut ctx.accounts.vault_token, &ctx.accounts.vault)
+    }
+
+    /// Pays a machine's accrued creator fees to its creator. Anyone can crank it.
+    pub fn withdraw_creator_fees(ctx: Context<WithdrawCreatorFees>) -> Result<()> {
+        let v = &mut ctx.accounts.vault;
         let m = &mut ctx.accounts.machine;
-        let (protocol, creator) = (m.protocol_fees, m.creator_accrued);
-        require!(protocol > 0 || creator > 0, GachaError::NothingToWithdraw);
-        m.protocol_fees = 0;
+        let amount = m.creator_accrued;
+        require!(amount > 0, GachaError::NothingToWithdraw);
         m.creator_accrued = 0;
-        let (id, bump) = (m.id, m.bump);
-        for (to, amount) in [
-            (&ctx.accounts.treasury_usdc, protocol),
-            (&ctx.accounts.creator_usdc, creator),
-        ] {
-            if amount > 0 {
-                transfer_from_machine(
-                    &ctx.accounts.token_program,
-                    &ctx.accounts.pool_token,
-                    &ctx.accounts.usdc_mint,
-                    to,
-                    &ctx.accounts.machine,
-                    id,
-                    bump,
-                    amount,
-                )?;
-            }
-        }
-        assert_solvent(&mut ctx.accounts.pool_token, &ctx.accounts.machine)
+        v.markets = v.markets.checked_sub(amount).ok_or(GachaError::Insolvent)?;
+        let vault_bump = v.bump;
+        transfer_from_vault(
+            &ctx.accounts.token_program,
+            &ctx.accounts.vault_token,
+            &ctx.accounts.usdc_mint,
+            &ctx.accounts.creator_usdc,
+            &ctx.accounts.vault,
+            vault_bump,
+            amount,
+        )?;
+        assert_solvent(&mut ctx.accounts.vault_token, &ctx.accounts.vault)
     }
 
     /// Pauses new purchases, launches and coin buys; claims, refunds and coin sells keep working.
@@ -628,37 +657,27 @@ pub mod kaigu_gacha {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn new_machine(
     id: u64,
     kind: MachineKind,
-    status: MachineStatus,
     creator: Pubkey,
     season: u16,
     args: MachineArgs,
-    pool_token: Pubkey,
     coin_mint: Pubkey,
     bump: u8,
 ) -> Machine {
     Machine {
         id,
         kind,
-        status,
         creator,
         season,
         name: args.name,
         symbol: args.symbol,
         theme: args.theme,
         basket: args.basket,
-        pool_token,
         coin_mint,
-        pending: 0,
-        prize_pool: 0,
-        locked: 0,
-        protocol_fees: 0,
-        buyback_accrued: 0,
-        creator_accrued: 0,
         market_usdc: 0,
+        creator_accrued: 0,
         total_pulls: 0,
         total_volume: 0,
         jackpots_won: 0,
@@ -666,38 +685,36 @@ fn new_machine(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn transfer_from_machine<'info>(
+fn transfer_from_vault<'info>(
     token_program: &Interface<'info, TokenInterface>,
-    pool_token: &InterfaceAccount<'info, TokenAccount>,
+    vault_token: &InterfaceAccount<'info, TokenAccount>,
     mint: &InterfaceAccount<'info, Mint>,
     to: &InterfaceAccount<'info, TokenAccount>,
-    machine: &Account<'info, Machine>,
-    machine_id: u64,
-    machine_bump: u8,
+    vault: &Account<'info, Vault>,
+    vault_bump: u8,
     amount: u64,
 ) -> Result<()> {
     token_interface::transfer_checked(
         CpiContext::new_with_signer(
             token_program.to_account_info(),
             TransferChecked {
-                from: pool_token.to_account_info(),
+                from: vault_token.to_account_info(),
                 mint: mint.to_account_info(),
                 to: to.to_account_info(),
-                authority: machine.to_account_info(),
+                authority: vault.to_account_info(),
             },
-            &[&[b"machine", &machine_id.to_le_bytes(), &[machine_bump]]],
+            &[&[b"prize_vault", &[vault_bump]]],
         ),
         amount,
         mint.decimals,
     )
 }
 
-/// Solvency: the machine's token account holds at least everything its ledger owes.
-fn assert_solvent(pool: &mut InterfaceAccount<TokenAccount>, m: &Machine) -> Result<()> {
-    pool.reload()?;
-    let owed = m.owed().ok_or(GachaError::Overflow)?;
-    require!(pool.amount >= owed, GachaError::Insolvent);
+/// Solvency: the vault's token account holds at least everything the ledgers owe.
+fn assert_solvent(token: &mut InterfaceAccount<TokenAccount>, v: &Vault) -> Result<()> {
+    token.reload()?;
+    let owed = v.owed().ok_or(GachaError::Overflow)?;
+    require!(token.amount >= owed, GachaError::Insolvent);
     Ok(())
 }
 
@@ -733,6 +750,30 @@ pub struct CreateSeason<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitVault<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump, has_one = admin @ GachaError::Unauthorized)]
+    pub config: Account<'info, Config>,
+    #[account(init, payer = admin, space = 8 + Vault::INIT_SPACE, seeds = [b"prize_vault"], bump)]
+    pub vault: Account<'info, Vault>,
+    #[account(
+        init,
+        payer = admin,
+        seeds = [b"prize_vault_token"],
+        bump,
+        token::mint = usdc_mint,
+        token::authority = vault,
+        token::token_program = token_program,
+    )]
+    pub vault_token: InterfaceAccount<'info, TokenAccount>,
+    #[account(address = config.usdc_mint)]
+    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub token_program: Interface<'info, TokenInterface>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct CreateMachine<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
@@ -750,19 +791,6 @@ pub struct CreateMachine<'info> {
         bump,
     )]
     pub machine: Box<Account<'info, Machine>>,
-    #[account(
-        init,
-        payer = admin,
-        seeds = [b"machine_pool", machine.key().as_ref()],
-        bump,
-        token::mint = usdc_mint,
-        token::authority = machine,
-        token::token_program = token_program,
-    )]
-    pub pool_token: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(address = config.usdc_mint)]
-    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
-    pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
 
@@ -774,6 +802,8 @@ pub struct LaunchMachine<'info> {
     pub config: Box<Account<'info, Config>>,
     #[account(seeds = [b"season", config.active_season.to_le_bytes().as_ref()], bump = season.bump)]
     pub season: Box<Account<'info, Season>>,
+    #[account(mut, seeds = [b"prize_vault"], bump = vault.bump)]
+    pub vault: Box<Account<'info, Vault>>,
     #[account(init_if_needed, payer = creator, space = 8 + Registry::INIT_SPACE, seeds = [b"registry"], bump)]
     pub registry: Box<Account<'info, Registry>>,
     #[account(
@@ -797,16 +827,8 @@ pub struct LaunchMachine<'info> {
         mint::token_program = coin_token_program,
     )]
     pub coin_mint: Box<Account<'info, token::Mint>>,
-    #[account(
-        init,
-        payer = creator,
-        seeds = [b"machine_pool", machine.key().as_ref()],
-        bump,
-        token::mint = usdc_mint,
-        token::authority = machine,
-        token::token_program = token_program,
-    )]
-    pub pool_token: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, address = vault.token)]
+    pub vault_token: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(
         mut,
         token::mint = usdc_mint,
@@ -827,6 +849,8 @@ pub struct CoinTrade<'info> {
     pub user: Signer<'info>,
     #[account(seeds = [b"config"], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
+    #[account(mut, seeds = [b"prize_vault"], bump = vault.bump)]
+    pub vault: Box<Account<'info, Vault>>,
     #[account(mut, seeds = [b"machine", machine.id.to_le_bytes().as_ref()], bump = machine.bump)]
     pub machine: Box<Account<'info, Machine>>,
     #[account(mut, seeds = [b"curve", machine.key().as_ref()], bump = curve.bump)]
@@ -848,23 +872,14 @@ pub struct CoinTrade<'info> {
         token::token_program = token_program,
     )]
     pub user_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, address = machine.pool_token)]
-    pub pool_token: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, address = vault.token)]
+    pub vault_token: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(address = config.usdc_mint)]
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     pub token_program: Interface<'info, TokenInterface>,
     pub coin_token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct CrankBuyback<'info> {
-    pub payer: Signer<'info>,
-    #[account(mut, seeds = [b"machine", machine.id.to_le_bytes().as_ref()], bump = machine.bump)]
-    pub machine: Account<'info, Machine>,
-    #[account(mut, seeds = [b"curve", machine.key().as_ref()], bump = curve.bump)]
-    pub curve: Account<'info, Curve>,
 }
 
 #[vrf]
@@ -877,8 +892,13 @@ pub struct BuyPacks<'info> {
     pub user: Signer<'info>,
     #[account(seeds = [b"config"], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
-    #[account(mut, seeds = [b"machine", machine.id.to_le_bytes().as_ref()], bump = machine.bump)]
+    #[account(mut, seeds = [b"prize_vault"], bump = vault.bump)]
+    pub vault: Box<Account<'info, Vault>>,
+    #[account(seeds = [b"machine", machine.id.to_le_bytes().as_ref()], bump = machine.bump)]
     pub machine: Box<Account<'info, Machine>>,
+    /// The machine's coin market; required for launchpad machines, absent for official ones.
+    #[account(seeds = [b"curve", machine.key().as_ref()], bump = curve.bump)]
+    pub curve: Option<Box<Account<'info, Curve>>>,
     #[account(seeds = [b"season", machine.season.to_le_bytes().as_ref()], bump = season.bump)]
     pub season: Box<Account<'info, Season>>,
     #[account(
@@ -904,8 +924,8 @@ pub struct BuyPacks<'info> {
         token::token_program = token_program,
     )]
     pub user_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, address = machine.pool_token)]
-    pub pool_token: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, address = vault.token)]
+    pub vault_token: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(address = config.usdc_mint)]
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
     pub token_program: Interface<'info, TokenInterface>,
@@ -919,13 +939,17 @@ pub struct BuyPacks<'info> {
 #[derive(Accounts)]
 pub struct CallbackOpen<'info> {
     #[account(mut, seeds = [b"pack", pack.owner.as_ref(), pack.nonce.to_le_bytes().as_ref()], bump = pack.bump)]
-    pub pack: Account<'info, Pack>,
+    pub pack: Box<Account<'info, Pack>>,
     #[account(mut, address = pack.machine)]
-    pub machine: Account<'info, Machine>,
+    pub machine: Box<Account<'info, Machine>>,
     #[account(seeds = [b"season", pack.season.to_le_bytes().as_ref()], bump = season.bump)]
-    pub season: Account<'info, Season>,
+    pub season: Box<Account<'info, Season>>,
     #[account(mut, seeds = [b"player", pack.owner.as_ref()], bump = player.bump)]
-    pub player: Account<'info, Player>,
+    pub player: Box<Account<'info, Player>>,
+    #[account(mut, seeds = [b"prize_vault"], bump = vault.bump)]
+    pub vault: Box<Account<'info, Vault>>,
+    #[account(mut, seeds = [b"curve", machine.key().as_ref()], bump = curve.bump)]
+    pub curve: Option<Box<Account<'info, Curve>>>,
 }
 
 /// Shared by claim and refund_timeout: both pay the pack owner and close the pack.
@@ -937,7 +961,9 @@ pub struct Claim<'info> {
     pub config: Box<Account<'info, Config>>,
     #[account(seeds = [b"season", pack.season.to_le_bytes().as_ref()], bump = season.bump)]
     pub season: Box<Account<'info, Season>>,
-    #[account(mut, address = pack.machine)]
+    #[account(mut, seeds = [b"prize_vault"], bump = vault.bump)]
+    pub vault: Box<Account<'info, Vault>>,
+    #[account(address = pack.machine)]
     pub machine: Box<Account<'info, Machine>>,
     #[account(
         mut,
@@ -958,38 +984,82 @@ pub struct Claim<'info> {
         token::token_program = token_program,
     )]
     pub user_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
-    #[account(mut, address = machine.pool_token)]
-    pub pool_token: Box<InterfaceAccount<'info, TokenAccount>>,
+    #[account(mut, address = vault.token)]
+    pub vault_token: Box<InterfaceAccount<'info, TokenAccount>>,
     #[account(address = config.usdc_mint)]
     pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    pub token_program: Interface<'info, TokenInterface>,
+    /// Needed only when the pack's pulls bought machine coins.
+    #[account(mut, address = machine.coin_mint)]
+    pub coin_mint: Option<Box<Account<'info, token::Mint>>>,
+    /// The owner's token account for the machine coin; the handler checks its mint and owner.
+    #[account(mut)]
+    pub user_coin: Option<Box<Account<'info, token::TokenAccount>>>,
+    pub coin_token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct FundPool<'info> {
+    pub funder: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, Config>,
+    #[account(mut, seeds = [b"prize_vault"], bump = vault.bump)]
+    pub vault: Account<'info, Vault>,
+    #[account(mut, address = vault.token)]
+    pub vault_token: InterfaceAccount<'info, TokenAccount>,
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+        token::authority = funder,
+        token::token_program = token_program,
+    )]
+    pub funder_usdc: InterfaceAccount<'info, TokenAccount>,
+    #[account(address = config.usdc_mint)]
+    pub usdc_mint: InterfaceAccount<'info, Mint>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 
 #[derive(Accounts)]
-pub struct WithdrawFees<'info> {
+pub struct WithdrawProtocolFees<'info> {
     pub payer: Signer<'info>,
     #[account(seeds = [b"config"], bump = config.bump)]
-    pub config: Box<Account<'info, Config>>,
-    #[account(mut, seeds = [b"machine", machine.id.to_le_bytes().as_ref()], bump = machine.bump)]
-    pub machine: Box<Account<'info, Machine>>,
-    #[account(mut, address = machine.pool_token)]
-    pub pool_token: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub config: Account<'info, Config>,
+    #[account(mut, seeds = [b"prize_vault"], bump = vault.bump)]
+    pub vault: Account<'info, Vault>,
+    #[account(mut, address = vault.token)]
+    pub vault_token: InterfaceAccount<'info, TokenAccount>,
     #[account(
         mut,
         token::mint = usdc_mint,
         token::authority = config.treasury,
         token::token_program = token_program,
     )]
-    pub treasury_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub treasury_usdc: InterfaceAccount<'info, TokenAccount>,
+    #[account(address = config.usdc_mint)]
+    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawCreatorFees<'info> {
+    pub payer: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, Config>,
+    #[account(mut, seeds = [b"prize_vault"], bump = vault.bump)]
+    pub vault: Account<'info, Vault>,
+    #[account(mut, seeds = [b"machine", machine.id.to_le_bytes().as_ref()], bump = machine.bump)]
+    pub machine: Account<'info, Machine>,
+    #[account(mut, address = vault.token)]
+    pub vault_token: InterfaceAccount<'info, TokenAccount>,
     #[account(
         mut,
         token::mint = usdc_mint,
         token::authority = machine.creator,
         token::token_program = token_program,
     )]
-    pub creator_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub creator_usdc: InterfaceAccount<'info, TokenAccount>,
     #[account(address = config.usdc_mint)]
-    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
+    pub usdc_mint: InterfaceAccount<'info, Mint>,
     pub token_program: Interface<'info, TokenInterface>,
 }
 

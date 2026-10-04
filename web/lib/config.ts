@@ -6,33 +6,35 @@ export const PPM = 1_000_000;
 
 export const SEASON = {
   packPrice: 10 * USDC,
-  feeBps: 800,
-  poolBps: 4_200,
+  feeBps: 700,
+  poolBps: 1_800,
   settleFeeBps: 100,
   capBps: 2_500,
   jackpotShareBps: 5_000,
-  /** The jackpot only pays while a machine's pool is at least this large */
-  jackpotMinPool: 4_000 * USDC,
-  pity: 30,
+  /** The jackpot only pays while the shared prize pool is at least this large */
+  jackpotMinPool: 2_000 * USDC,
+  pity: 60,
   timeoutSlots: 1_500,
 };
 
-/** Launchpad machines carve these out of the fee, as bps of the pack price */
-export const FEE_SPLIT = { buybackBps: 200, creatorBps: 100 };
+/**
+ * Carved out of the fee, as bps of the pack price. On launchpad machines the rebate buys the
+ * machine coin for the player and the creator gets a cut; official machines have neither, so
+ * the rebate share goes to the prize pool and the creator's share to the protocol.
+ */
+export const FEE_SPLIT = { rebateBps: 300, creatorBps: 100 };
 
 // Machine coin market template, mirrored from programs/kaigu-gacha/src/market.rs
 export const MARKET = {
   virtualCoins: 1_000_000_000 * COIN,
   virtualUsdc: 1_250 * USDC,
   curveSupply: 800_000_000 * COIN,
+  /** USDC the curve takes in before the coin graduates; all of it becomes pool liquidity */
   target: 5_000 * USDC,
-  seed: 4_000 * USDC,
   tradeFeeBps: 100,
   launchFee: 10 * USDC,
-  saleDays: 7,
   earlyMaxUsdc: 100 * USDC,
   creatorMaxPct: 5,
-  maxBuybackPerCrank: 25 * USDC,
 };
 
 export const SR = 2;
@@ -51,13 +53,13 @@ export type TierMeta = {
 };
 
 export const TIERS: TierMeta[] = [
-  { code: "N", ppm: 630_400, bonus: 0, color: "#8F96B8", from: "#C9CEE3", to: "#8F96B8" },
-  { code: "R", ppm: 220_000, bonus: 3 * USDC, color: "#1FC7D4", from: "#7CEAF2", to: "#1FC7D4" },
-  { code: "SR", ppm: 120_000, bonus: 7 * USDC, color: "#7645D9", from: "#A881FC", to: "#7645D9" },
-  { code: "SSR", ppm: 25_000, bonus: 25 * USDC, color: "#FFB237", from: "#FFE08A", to: "#FF9D00" },
-  { code: "UR", ppm: 4_000, bonus: 95 * USDC, color: "#ED4B9E", from: "#FF8AC8", to: "#E0308A" },
-  { code: "LR", ppm: 400, bonus: 495 * USDC, color: "#FF5A3C", from: "#FFB15C", to: "#FF3D5E" },
-  { code: "JP", ppm: 200, bonus: 0, color: "#7645D9", from: "#53DEE9", to: "#ED4B9E" },
+  { code: "N", ppm: 788_750, bonus: 0, color: "#8F96B8", from: "#C9CEE3", to: "#8F96B8" },
+  { code: "R", ppm: 175_000, bonus: 3.5 * USDC, color: "#1FC7D4", from: "#7CEAF2", to: "#1FC7D4" },
+  { code: "SR", ppm: 22_500, bonus: 17.5 * USDC, color: "#7645D9", from: "#A881FC", to: "#7645D9" },
+  { code: "SSR", ppm: 13_000, bonus: 32.5 * USDC, color: "#FFB237", from: "#FFE08A", to: "#FF9D00" },
+  { code: "UR", ppm: 500, bonus: 92.5 * USDC, color: "#ED4B9E", from: "#FF8AC8", to: "#E0308A" },
+  { code: "LR", ppm: 200, bonus: 492.5 * USDC, color: "#FF5A3C", from: "#FFB15C", to: "#FF3D5E" },
+  { code: "JP", ppm: 50, bonus: 0, color: "#7645D9", from: "#53DEE9", to: "#ED4B9E" },
 ];
 
 export type Stock = {
@@ -118,5 +120,8 @@ export const CHAIN = {
   usdcMint: process.env.NEXT_PUBLIC_USDC_MINT ?? "",
   cluster: process.env.NEXT_PUBLIC_CLUSTER ?? "devnet",
 };
+
+/** Size of a current Machine account; accounts of any other size are left over from an earlier program version */
+export const MACHINE_ACCOUNT_SIZE = 183;
 
 export const IS_CHAIN_MODE = CHAIN.programId.length > 0;

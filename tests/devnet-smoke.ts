@@ -1,5 +1,6 @@
 // Devnet smoke test against the deployed program and the live MagicBlock VRF oracle:
-// mint test USDC → buy a pack on a machine → wait for the VRF callback → claim USDC.
+// mint test USDC → buy a pack on a machine → wait for the VRF callback → claim USDC and,
+// on a launchpad machine, the machine coins the pulls bought.
 // Usage (from tests/): npx tsx devnet-smoke.ts [count] [machineId]
 
 import { AnchorProvider, BN, Program, Wallet } from "@coral-xyz/anchor";
@@ -39,8 +40,13 @@ console.log("USDC before buy:", await bal());
 
 const machine = pda(Buffer.from("machine"), new BN(machineId).toArrayLike(Buffer, "le", 8));
 const m0 = await program.account.machine.fetch(machine);
+const official = "official" in m0.kind;
 const season = pda(Buffer.from("season"), new BN(m0.season).toArrayLike(Buffer, "le", 2));
-const poolToken = pda(Buffer.from("machine_pool"), machine.toBuffer());
+const vault = pda(Buffer.from("prize_vault"));
+const vaultToken = pda(Buffer.from("prize_vault_token"));
+const curve = pda(Buffer.from("curve"), machine.toBuffer());
+const coinMint = pda(Buffer.from("coin"), machine.toBuffer());
+const userCoin = getAssociatedTokenAddressSync(coinMint, user.publicKey);
 const nonce = new BN(Date.now());
 const pack = pda(Buffer.from("pack"), user.publicKey.toBuffer(), nonce.toArrayLike(Buffer, "le", 8));
 const t0 = Date.now();
@@ -49,11 +55,13 @@ const buySig = await program.methods
   .accountsPartial({
     payer: user.publicKey,
     user: user.publicKey,
+    vault,
     machine,
+    curve: official ? null : curve,
     season,
     pack,
     userUsdc: ata,
-    poolToken,
+    vaultToken,
     usdcMint: mint,
     tokenProgram: TOKEN_PROGRAM_ID,
     oracleQueue: QUEUE,
@@ -61,11 +69,14 @@ const buySig = await program.methods
   .rpc();
 console.log(`buy_packs on ${m0.name}:`, buySig);
 
+let coins = new BN(0);
 for (;;) {
   const p = await program.account.pack.fetchNullable(pack);
   if (p && "revealed" in p.status) {
     console.log(`revealed after ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     for (const r of p.results.slice(0, p.count)) console.log(`  tier ${r.tier}  value ${r.value.toNumber() / 1e6}  stock ${r.stockIdx}`);
+    coins = p.coins;
+    console.log(`  machine coins bought: ${coins.toNumber() / 1e6}`);
     break;
   }
   if (Date.now() - t0 > 120_000) throw new Error("VRF callback did not arrive within 120s");
@@ -74,9 +85,27 @@ for (;;) {
 
 const claimSig = await program.methods
   .claim()
-  .accountsPartial({ owner: user.publicKey, season, machine, pack, rentPayer: user.publicKey, userUsdc: ata, poolToken, usdcMint: mint, tokenProgram: TOKEN_PROGRAM_ID })
+  .accountsPartial({
+    owner: user.publicKey,
+    season,
+    vault,
+    machine,
+    pack,
+    rentPayer: user.publicKey,
+    userUsdc: ata,
+    vaultToken,
+    usdcMint: mint,
+    tokenProgram: TOKEN_PROGRAM_ID,
+    coinMint: coins.isZero() ? null : coinMint,
+    userCoin: coins.isZero() ? null : userCoin,
+  })
+  .preInstructions(coins.isZero() ? [] : [createAssociatedTokenAccountIdempotentInstruction(user.publicKey, userCoin, user.publicKey, coinMint)])
   .rpc();
 console.log("claim:", claimSig);
 console.log("USDC after claim:", await bal());
-const m = await program.account.machine.fetch(machine);
-console.log("machine:", { prizePool: m.prizePool.toNumber() / 1e6, protocolFees: m.protocolFees.toNumber() / 1e6, locked: m.locked.toNumber(), pending: m.pending.toNumber(), pulls: m.totalPulls.toNumber() });
+if (!coins.isZero()) console.log("coin balance:", Number((await connection.getTokenAccountBalance(userCoin)).value.amount) / 1e6);
+const v = await program.account.vault.fetch(vault);
+const n = (x: BN) => x.toNumber() / 1e6;
+const owed = n(v.pending) + n(v.prizePool) + n(v.locked) + n(v.protocolFees) + n(v.markets);
+console.log("vault:", { prizePool: n(v.prizePool), protocolFees: n(v.protocolFees), markets: n(v.markets), locked: n(v.locked), pending: n(v.pending), pulls: v.totalPulls.toNumber() });
+console.log("vault token balance:", Number((await connection.getTokenAccountBalance(vaultToken)).value.amount) / 1e6, "owed:", owed);

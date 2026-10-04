@@ -126,8 +126,7 @@ export function StatusBar() {
       </span>
       <span className="ml-auto hidden sm:inline">{t("status.vrf")}</span>
       <span>
-        {t("status.pools")}:{" "}
-        <span className="font-mono font-bold text-ink">${g.ready ? usd(g.machines.reduce((s, m) => s + m.prizePool, 0), 0) : "—"}</span>
+        {t("status.pool")}: <span className="font-mono font-bold text-ink">${g.ready ? usd(g.pool.prizePool, 0) : "—"}</span>
       </span>
     </footer>
   );

@@ -5,27 +5,29 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence } from "motion/react";
 import { useState } from "react";
 import { FLOOR, JACKPOT, MARKET, PPM, SEASON, STOCKS, THEMES, TIERS, unlockThreshold } from "@/lib/config";
+import { quoteRebate } from "@/lib/engine";
 import { duration, usd, usdAuto } from "@/lib/format";
 import { useGacha } from "@/lib/gacha-context";
 import { useI18n } from "@/lib/i18n";
 import type { Key } from "@/lib/locales/en";
-import type { MachineInfo } from "@/lib/types";
+import type { MachineInfo, PoolInfo } from "@/lib/types";
 import { useNow } from "@/lib/use-now";
 import { PackArt, StockCoin } from "./art";
-import { CoinPanel } from "./CoinPanel";
+import { CoinPanel, coins } from "./CoinPanel";
 import { OpenStage, type OpenRequest } from "./OpenStage";
 
 const tierName = (i: number) => `tier.${i}` as Key;
-export const jackpotLive = (m: MachineInfo) => m.status === "live" && m.prizePool >= SEASON.jackpotMinPool;
+export const jackpotLive = (pool: PoolInfo) => pool.prizePool >= SEASON.jackpotMinPool;
+/** How far a coin's curve is from selling out, 0 to 100. */
+export const curvePct = (m: MachineInfo) => (m.coin ? Math.min(100, Math.floor((m.coin.marketUsdc / MARKET.target) * 100)) : 0);
 
-export function StatusBadge({ m, now }: { m: MachineInfo; now: number }) {
+export function StatusBadge({ m }: { m: MachineInfo }) {
   const { t } = useI18n();
-  if (m.official) return <span className="label rounded-md bg-white/10 px-2 py-1 !text-[10px]">{t("machine.official")}</span>;
-  const status = m.status === "curve" && m.coin && now > m.coin.deadline && now > 0 ? "failed" : m.status;
-  const color = { curve: "#FFC72C", live: "#31D0AA", failed: "#FF6B8B" }[status];
+  if (!m.coin) return <span className="label rounded-md bg-white/10 px-2 py-1 !text-[10px]">{t("machine.official")}</span>;
+  const color = m.coin.graduated ? "#31D0AA" : "#FFC72C";
   return (
     <span className="label rounded-md px-2 py-1 !text-[10px]" style={{ color, background: `${color}22` }}>
-      {t(`phase.${status}` as Key)}
+      {m.coin.graduated ? t("phase.pool") : `${t("phase.curve")} · ${curvePct(m)}%`}
     </span>
   );
 }
@@ -51,14 +53,12 @@ function Panel({ title, icon, right, children }: { title: string; icon?: string;
 function StagePanel({ m, onOpen }: { m: MachineInfo; onOpen: (req: Omit<OpenRequest, "key">) => void }) {
   const g = useGacha();
   const { t, err } = useI18n();
-  const now = useNow();
   const [turbo, setTurbo] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const theme = THEMES[m.theme % THEMES.length];
   const count = turbo ? 10 : 1;
   const cost = count * SEASON.packPrice;
-  const live = m.status === "live";
 
   const getTest = async () => {
     setBusy(true);
@@ -73,9 +73,7 @@ function StagePanel({ m, onOpen }: { m: MachineInfo; onOpen: (req: Omit<OpenRequ
   };
 
   let cta: { label: string; disabled?: boolean; onClick?: () => void; ghost?: boolean };
-  if (m.status === "curve") cta = { label: t("cta.notOpen"), disabled: true };
-  else if (m.status === "failed") cta = { label: t("cta.failed"), disabled: true };
-  else if (!g.connected) cta = { label: t("cta.connect"), onClick: g.connect, disabled: !g.connect };
+  if (!g.connected) cta = { label: t("cta.connect"), onClick: g.connect, disabled: !g.connect };
   else if (g.usdc < cost) cta = g.faucet ? { label: t("cta.getTest"), onClick: getTest, ghost: true } : { label: t("cta.short"), disabled: true };
   else
     cta = {
@@ -83,27 +81,14 @@ function StagePanel({ m, onOpen }: { m: MachineInfo; onOpen: (req: Omit<OpenRequ
       onClick: () => onOpen({ count, title: m.name, symbol: m.symbol, theme: m.theme, run: () => g.buy(m.id, count) }),
     };
 
-  const stats: [string, React.ReactNode][] = live
-    ? [
-        [t("stat.pool"), `$${usd(m.prizePool, 0)}`],
-        [
-          t("stat.jackpot"),
-          jackpotLive(m) ? <span className="text-accent">${usd(m.prizePool / 2, 0)}</span> : <span className="text-subtle">{t("stat.locked")}</span>,
-        ],
-        [t("stat.pulls"), m.totalPulls.toLocaleString("en-US")],
-      ]
-    : [
-        [t("stat.raised"), `$${usd(m.coin?.marketUsdc ?? 0, 0)}`],
-        [t("stat.pool"), `$${usd(MARKET.seed, 0)}`],
-        [t("stat.endsIn"), m.status === "curve" && m.coin && now > 0 ? duration(m.coin.deadline - now) : "—"],
-      ];
-
-  const note =
-    m.status === "curve"
-      ? t("note.curve", { target: usd(MARKET.target, 0), seed: usd(MARKET.seed, 0) })
-      : m.status === "failed"
-        ? t("note.failed")
-        : t("note.refund");
+  const stats: [string, React.ReactNode][] = [
+    [t("stat.pool"), `$${usd(g.pool.prizePool, 0)}`],
+    [
+      t("stat.jackpot"),
+      jackpotLive(g.pool) ? <span className="text-accent">${usd(g.pool.prizePool / 2, 0)}</span> : <span className="text-subtle">{t("stat.locked")}</span>,
+    ],
+    [t("stat.pulls"), m.totalPulls.toLocaleString("en-US")],
+  ];
 
   return (
     <div className="flex flex-col gap-4 lg:sticky lg:top-20">
@@ -114,9 +99,9 @@ function StagePanel({ m, onOpen }: { m: MachineInfo; onOpen: (req: Omit<OpenRequ
           style={{ background: `repeating-conic-gradient(from 0deg, ${theme.from} 0deg 8deg, transparent 8deg 22deg)` }}
         />
         <div className="absolute bottom-[9%] h-5 w-[34%] rounded-[50%] bg-black/60 blur-md" />
-        <PackArt theme={m.theme} symbol={m.symbol} className={`float relative h-[80%] drop-shadow-[0_24px_40px_rgba(0,0,0,.6)] ${live ? "" : "opacity-60 grayscale-[35%]"}`} />
+        <PackArt theme={m.theme} symbol={m.symbol} className="float relative h-[80%] drop-shadow-[0_24px_40px_rgba(0,0,0,.6)]" />
         <div className="absolute left-3 top-3">
-          <StatusBadge m={m} now={now} />
+          <StatusBadge m={m} />
         </div>
         {!m.official && <span className="label absolute right-3 top-3 font-mono text-subtle">{t("machine.by", { who: m.creator === "you" ? t("recent.you") : m.creator })}</span>}
       </div>
@@ -147,35 +132,36 @@ function StagePanel({ m, onOpen }: { m: MachineInfo; onOpen: (req: Omit<OpenRequ
         {busy ? t("cta.working") : cta.label}
       </button>
       {error && <p className="-mt-2 text-sm text-failure">{error}</p>}
-
-      {live && (
-        <label className="panel flex cursor-pointer items-center gap-3 px-4 py-3">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden>
-            <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
-          </svg>
-          <span className="mr-auto">
-            <span className="label block">{t("turbo.title")}</span>
-            <span className="text-sm text-subtle">{t("turbo.sub")}</span>
-          </span>
-          <input type="checkbox" role="switch" className="peer sr-only" checked={turbo} onChange={(e) => setTurbo(e.target.checked)} />
-          <span className="relative h-6 w-11 rounded-full bg-surface-2 ring-1 ring-line transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-ink after:transition-transform peer-checked:after:translate-x-5 peer-checked:after:bg-accent-ink" />
-        </label>
+      {m.coin && (
+        <p className="-mt-1 text-center text-sm font-semibold text-accent">
+          {t("cta.rebate", { n: coins(quoteRebate(m.coin)), sym: m.symbol })}
+        </p>
       )}
 
-      <p className="text-sm text-subtle">{note}</p>
+      <label className="panel flex cursor-pointer items-center gap-3 px-4 py-3">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden>
+          <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
+        </svg>
+        <span className="mr-auto">
+          <span className="label block">{t("turbo.title")}</span>
+          <span className="text-sm text-subtle">{t("turbo.sub")}</span>
+        </span>
+        <input type="checkbox" role="switch" className="peer sr-only" checked={turbo} onChange={(e) => setTurbo(e.target.checked)} />
+        <span className="relative h-6 w-11 rounded-full bg-surface-2 ring-1 ring-line transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-ink after:transition-transform peer-checked:after:translate-x-5 peer-checked:after:bg-accent-ink" />
+      </label>
+
+      <p className="text-sm text-subtle">{t("note.refund")}</p>
     </div>
   );
 }
 
 function ChooseMachine({ machines, selected, onSelect }: { machines: MachineInfo[]; selected: string; onSelect: (id: string) => void }) {
   const { t } = useI18n();
-  const now = useNow();
-  // Open machines first, busiest on top; then the ones still raising
-  const order = (m: MachineInfo) => (m.status === "live" ? 0 : m.status === "curve" ? 1 : 2);
-  const shown = [...machines]
-    .filter((m) => m.status !== "failed" || m.id === selected)
-    .sort((a, b) => order(a) - order(b) || Number(b.official) - Number(a.official) || b.volume - a.volume)
-    .slice(0, 7);
+  // Official machines first, then the busiest; the selected one always shows
+  const sorted = [...machines].sort((a, b) => Number(b.official) - Number(a.official) || b.volume - a.volume);
+  const shown = sorted.slice(0, 7);
+  const current = sorted.find((m) => m.id === selected);
+  if (current && !shown.includes(current)) shown[shown.length - 1] = current;
   return (
     <Panel
       title={t("choose.title")}
@@ -202,7 +188,7 @@ function ChooseMachine({ machines, selected, onSelect }: { machines: MachineInfo
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
                   <span className="truncate font-bold">{m.name}</span>
-                  <StatusBadge m={m} now={now} />
+                  <StatusBadge m={m} />
                 </span>
                 <span className="flex -space-x-1 pt-1">
                   {m.basket.slice(0, 6).map((i) => (
@@ -211,8 +197,8 @@ function ChooseMachine({ machines, selected, onSelect }: { machines: MachineInfo
                 </span>
               </span>
               <span className="shrink-0 text-right">
-                <span className="label block !text-[10px] text-subtle">{m.status === "live" ? t("stat.pool") : t("stat.raised")}</span>
-                <span className="font-mono font-bold">${usd(m.status === "live" ? m.prizePool : (m.coin?.marketUsdc ?? 0), 0)}</span>
+                <span className="label block !text-[10px] text-subtle">{t("stat.pulls")}</span>
+                <span className="font-mono font-bold">{m.totalPulls.toLocaleString("en-US")}</span>
               </span>
             </button>
           );
@@ -241,10 +227,10 @@ function PrizeTile({ tier, label, value, dim, sub }: { tier: number; label: stri
   );
 }
 
-function TopPrizes({ m }: { m: MachineInfo }) {
+function TopPrizes() {
+  const g = useGacha();
   const { t } = useI18n();
-  // Before graduation, show what the machine will open with
-  const pool = m.status === "live" ? m.prizePool : MARKET.seed;
+  const pool = g.pool.prizePool;
   const locked = (tier: number) => (pool < unlockThreshold(tier) ? t("rates.locked", { amount: usd(unlockThreshold(tier), 0) }) : undefined);
   const jackpotOn = pool >= SEASON.jackpotMinPool;
   return (
@@ -272,10 +258,10 @@ function Bar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-function DropRates({ m }: { m: MachineInfo }) {
+function DropRates() {
   const g = useGacha();
   const { t } = useI18n();
-  const pool = m.status === "live" ? m.prizePool : MARKET.seed;
+  const pool = g.pool.prizePool;
   const on = pool >= SEASON.jackpotMinPool;
   return (
     <Panel
@@ -367,11 +353,8 @@ export function GachaView() {
   const params = useSearchParams();
   const [request, setRequest] = useState<OpenRequest | null>(null);
   const wanted = params.get("m");
-  // Default to the busiest open machine
-  const m =
-    g.machines.find((x) => x.id === wanted) ??
-    [...g.machines].filter((x) => x.status === "live").sort((a, b) => b.prizePool - a.prizePool)[0] ??
-    g.machines[0];
+  // Default to the busiest machine
+  const m = g.machines.find((x) => x.id === wanted) ?? [...g.machines].sort((a, b) => b.volume - a.volume)[0];
   const open = (req: Omit<OpenRequest, "key">) => setRequest({ ...req, key: Date.now() });
 
   if (!m) return <p className="panel p-12 text-center text-subtle">{g.ready ? t("machines.empty") : "…"}</p>;
@@ -383,8 +366,8 @@ export function GachaView() {
         <div className="flex flex-col gap-4">
           <ChooseMachine machines={g.machines} selected={m.id} onSelect={(id) => router.replace(`/?m=${id}`, { scroll: false })} />
           {m.coin && <CoinPanel key={m.id} m={{ ...m, coin: m.coin }} />}
-          <TopPrizes m={m} />
-          <DropRates m={m} />
+          <TopPrizes />
+          <DropRates />
           <RecentOpenings />
         </div>
       </div>
