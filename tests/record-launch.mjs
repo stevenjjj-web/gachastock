@@ -302,7 +302,7 @@ async function capture() {
         <span class="pill"><i style="background:#D82A85"></i>Stock Memes</span>
         <span class="pill"><i style="background:#7645D9"></i>Leverage Box</span>
       </div>
-      <p class="fine rise" data-d="2500">Solana · MagicBlock VRF · Ephemeral Rollups · Pyth Lazer</p>
+      <p class="fine rise" data-d="2500">Built on Solana and MagicBlock</p>
     </div>`,
     { hold: 3400 },
   );
@@ -415,7 +415,7 @@ async function capture() {
       <p class="rise" data-d="0"><span class="newbadge"><i></i>New for Solana Blitz</span></p>
       <p class="chapno rise" data-d="150">03</p>
       <h1 class="chapter rise" data-d="350">Leverage Box</h1>
-      <p class="lede rise" data-d="850" style="max-width:1220px">Open a box, get a random long or short at up to <b>10,000×</b>, and settle against other players in 45 seconds. Inside a MagicBlock Ephemeral Rollup.</p>
+      <p class="lede rise" data-d="850" style="max-width:1220px">Open a box, get a random long or short at up to <b>10,000×</b>, and settle against the other players in 45 seconds.</p>
     </div>`,
   });
   cardUp = true;
@@ -426,16 +426,16 @@ async function capture() {
   await sleep(Math.max(0, card3End - Date.now()));
   await cardOut(500);
   label("03", "Leverage Box");
-  footnote("Recorded in demo mode · live MagicBlock oracle price · simulated players");
+  footnote("Recorded in demo mode · live oracle price · simulated players");
   await camTo({ s: CLOSE, focus: "[data-price]", dx: 170, dy: 40, ms: 1600 });
-  await caption("A live Pyth Lazer price, streamed inside a MagicBlock Ephemeral Rollup.", { hold: 1700 });
+  await caption("Each round runs on a live Pyth Lazer price.", { hold: 1700 });
   await camTo({ s: CLOSE, x: 1050, y: 330, ms: 1400 });
-  await caption("One approval on Solana moves USDC into the rollup.");
+  await caption("Deposit once, with a single wallet approval.");
   await cursorShow();
   await click("Deposit 100 USDC");
   await waitApp(() => document.querySelector("[data-balance]")?.textContent.includes("100.00"), 20_000, "arena balance");
   await sleep(400);
-  await caption("From here every box is instant: no fees, no wallet pop-ups.");
+  await caption("After that, opening a box is instant and free, with no wallet pop-ups.");
   let opened = 0;
   for (let i = 0; i < 4; i++) {
     const ok = await page.evaluate(() => [...document.querySelectorAll("button")].some((b) => b.textContent.includes("Open a box") && !b.disabled));
@@ -449,7 +449,7 @@ async function capture() {
     console.log("  box:", got);
     if (got === "refunded") break;
     opened++;
-    if (i === 0) await caption("MagicBlock VRF draws the side and the leverage in about 10 ms.");
+    if (i === 0) await caption("MagicBlock VRF draws each box's side and leverage.");
     await sleep(1000);
     await page.evaluate(() => document.querySelector("[data-reveal]")?.click());
     await sleep(350);
@@ -488,7 +488,7 @@ async function capture() {
   await caption("Settled at the oracle price and credited automatically.", { hold: 1500 });
   console.log("  results:", await appText("[data-results]"), "| balance", await appText("[data-balance]"));
   await camTo({ s: CLOSE, x: 1050, y: 330, ms: 1300 });
-  await caption("Cash out: the account goes back to Solana, and the USDC comes home.");
+  await caption("Cash out between rounds and the USDC goes back to your wallet.");
   await cursorShow();
   await waitApp(() => [...document.querySelectorAll("button")].some((b) => b.textContent.includes("Cash out") && !b.disabled), 20_000, "cash out");
   await click("Cash out");
@@ -514,8 +514,8 @@ async function capture() {
           <div class="wire"><svg width="180" height="20"><path data-draw d="M176 10 H12 M22 3 L10 10 L22 17" fill="none" stroke="#6f6b61" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>commit</div>
         </div>
         <div class="lane er rise" data-d="1000">
-          <h4>Ephemeral Rollup</h4><p class="sub">MagicBlock</p>
-          <ul><li><i></i>Boxes signed by a session key</li><li><i></i>VRF draws in about 10 ms</li><li><i></i>Pyth Lazer price feeds</li><li><i></i>O(1) settlement and claims</li></ul>
+          <h4>Ephemeral Rollup</h4><p class="sub">MagicBlock · Leverage Box only</p>
+          <ul><li><i></i>Boxes signed by a session key</li><li><i></i>A VRF draw for every box</li><li><i></i>Pyth Lazer price feeds</li><li><i></i>O(1) settlement and claims</li></ul>
         </div>
       </div>
       <div class="stats rise" data-d="1700">

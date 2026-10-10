@@ -2,27 +2,31 @@
 
 Copy for the form at https://build.magicblock.app/?stage=blitz#submit.
 
-**Project name.** GachaStock: Leverage Box
+**Project name.** GachaStock
 
-**One line.** Open a box, get a random leveraged long or short on a live price, and settle against the other players in under a minute, in a MagicBlock Ephemeral Rollup.
+**One line.** Gacha for the stock market on Solana: stock blind boxes, stock memes and Leverage Box, drawn by MagicBlock VRF and settled between players, never against a house.
 
 **Description.**
 
-Leverage Box turns a leveraged trade into a gacha pull. You deposit USDC once on Solana; from then on every box is a gasless, pop-up-free transaction in an Ephemeral Rollup. MagicBlock VRF draws the box's side and leverage (500x to 10,000x) in about 10 ms. A round locks at the Pyth Lazer oracle price, runs for 30 seconds and settles at the oracle price.
+GachaStock turns playing the stock market into opening a box. There are three ways to play with 10 USDC.
 
-What is new is who takes the other side: nobody has to. Perps let you choose a side, so they need market makers or a liquidity pool. Here the draw leans towards whichever side is lighter, so longs and shorts balance on their own and a round settles purely between its players. Losers lose `stake × leverage × move`, capped at their stake; winners split exactly that by weight. The program is never a counterparty and only takes 10% of winnings.
+Stock Blind Boxes are gacha packs of tokenized US stocks. 7.50 of every 10 USDC always comes back, the rest funds one prize pool that every machine shares, and MagicBlock VRF draws each pull. Stock Memes let anyone launch a machine on a basket of stocks, with its own coin on a bonding curve; 3% of every pull buys that coin for the player who pulled, so the people who play a machine come to own it.
 
-It is built for speed where speed is the product: draws, locks, live profit and loss, settlement and claims all happen in the rollup, and settlement is a single O(1) instruction however many tickets a round has. USDC itself never leaves Solana.
+Leverage Box is the newest game. A box holds a random long or short on a live price at 500× to 10,000×, drawn by MagicBlock VRF. A round locks at the Pyth Lazer oracle price, runs for 30 seconds and settles between its players. Perps need market makers or a pool to take the other side; here nobody has to, because the draw leans towards whichever side is lighter, so longs and shorts balance on their own. Losers lose `stake × leverage × move`, capped at their stake, and winners split exactly that. The program is never a counterparty and keeps 10% of winnings.
 
-The same app also has gacha machines for tokenized stocks drawn by MagicBlock VRF on the base layer: a shared prize pool, a launchpad, and machine coins that players earn by pulling.
+Leverage Box runs in a MagicBlock Ephemeral Rollup. A round lasts 45 seconds and a player opens several boxes in it, so each box confirming in milliseconds, without a fee or a wallet prompt, matters there. USDC stays in a vault on Solana throughout, and settlement is one O(1) instruction however many boxes a round has. The two gacha games run directly on Solana.
 
-**MagicBlock products used.** Ephemeral Rollups (delegation, commit and undelegate), VRF (base layer and the ephemeral queue), the Pyth Lazer pricing oracle in the rollup, gasless transactions with a session key.
+**MagicBlock products used.** VRF on Solana (gacha draws) and on the ephemeral queue (Leverage Box draws); an Ephemeral Rollup for Leverage Box (delegation, commit and undelegate); the Pyth Lazer price oracle in the rollup; session keys for gasless boxes.
 
 **GitHub.** https://github.com/stevenjjj-web/gachastock
 
-**Website.** https://gachastock-bice.vercel.app/arena
+**Website.** https://gachastock-bice.vercel.app (Leverage Box is at `/arena`)
 
-**Demo.** https://github.com/stevenjjj-web/gachastock/blob/main/docs/demo.mp4: a three-minute launch film covering stock blind boxes, stock memes and Leverage Box, recorded in demo mode by `tests/record-launch.mjs` with Leverage Box on the live MagicBlock oracle price. The same Leverage Box flow against devnet itself, with real rollup transactions, is in https://github.com/stevenjjj-web/gachastock/blob/main/docs/devnet-walkthrough.mp4 (90 seconds, recorded by `tests/record-demo.mjs`). Upload them to a video host for links that play inline.
+**Demo.**
+- https://github.com/stevenjjj-web/gachastock/blob/main/docs/demo.mp4: a three-minute film of all three games, recorded in demo mode by `tests/record-launch.mjs`. In demo mode, Leverage Box uses the live oracle price and simulates the other players.
+- https://github.com/stevenjjj-web/gachastock/blob/main/docs/devnet-walkthrough.mp4: the same Leverage Box flow against devnet, with real rollup transactions (90 seconds, recorded by `tests/record-demo.mjs`).
+
+Upload both to a video host for links that play inline.
 
 **Program addresses (devnet).**
 
@@ -35,6 +39,9 @@ https://explorer.solana.com/tx/4aUdsh8XenvfKH5SymyL8mfVtVHvvynoWR5A3qpaMzvMbgXsY
 The delegation of that player's account on Solana:
 https://explorer.solana.com/tx/3DAQ7qTdHSDTrUUWiATp9m3zr16YtPMeRqrLRuSMMZ6KDLM9yQ97qPFuxKi63U99GTS7ssNJK1zkUDBW2MgVQwmy?cluster=devnet
 
-The README lists every step of the trip, from deposit to withdrawal.
+The README links every step of that trip, from deposit to withdrawal.
 
-**How to try it.** Open the website, connect a devnet wallet, press `+ Test USDC`, deposit, and open boxes on the SOL arena. A round needs boxes on both sides to move money; alone, your own boxes land on both sides. `npx tsx arena-bot.ts 30 SOL` in `tests/` runs a second player.
+**How to try it.**
+1. Open the website, connect a devnet wallet and press `+ Test USDC`.
+2. Open packs on the Gacha tab, or launch a machine on the Launchpad tab.
+3. On the Arena tab, deposit and open boxes on the SOL arena. A round needs boxes on both sides to move money; alone, your own boxes land on both sides. `npx tsx arena-bot.ts 30 SOL` in `tests/` runs a second player.
