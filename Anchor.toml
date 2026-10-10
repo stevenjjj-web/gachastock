@@ -6,9 +6,11 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
+leverage_box = "7YqLqC9wArnHb7aKcCRxkFMbKYE2gqQnExXtMyBdZ5Rv"
 kaigu_gacha = "7VAfdZyRRWCvLdPUpqYbeuSsvtQW4cp2PeVQvkAtBHHv"
 
 [programs.devnet]
+leverage_box = "7YqLqC9wArnHb7aKcCRxkFMbKYE2gqQnExXtMyBdZ5Rv"
 kaigu_gacha = "7VAfdZyRRWCvLdPUpqYbeuSsvtQW4cp2PeVQvkAtBHHv"
 
 [registry]

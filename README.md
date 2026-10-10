@@ -1,16 +1,91 @@
 # GachaStock
 
-A blind-box protocol for tokenized US stocks on Solana: 10 USDC a pack, a guaranteed 7.50 USDC floor, one prize pool shared by every machine, and a jackpot worth half of it. Tickets only, never the house.
+Two things you can do with 10 USDC on Solana, both settled between players and never against a house:
+
+- **Leverage Box** (new, for MagicBlock Solana Blitz v9): open a box, get a random leveraged long or short on a live price, and settle against the other players in under a minute. It runs in a **MagicBlock Ephemeral Rollup**: instant, no fees and no wallet pop-ups while you play.
+- **Gacha machines**: packs of tokenized US stocks with a guaranteed 7.50 USDC floor, one shared prize pool and a coin you earn by playing, drawn by **MagicBlock VRF** on Solana.
+
+Live on devnet: https://gachastock-bice.vercel.app (Leverage Box is at `/arena`). Demo video: [`docs/demo.mp4`](docs/demo.mp4), recorded against devnet by `tests/record-demo.mjs`.
 
 ```
-programs/kaigu-gacha   Anchor program (draws settle in a MagicBlock VRF callback)
+programs/leverage-box  Anchor program for Leverage Box (Ephemeral Rollup, VRF, Pyth Lazer oracle)
+programs/kaigu-gacha   Anchor program for the gacha machines (draws settle in a MagicBlock VRF callback)
 web                    Next.js frontend (demo mode by default)
-sim                    Economic simulations the parameters were chosen with (see sim/RESULTS.md)
+sim                    Economic simulations the gacha parameters were chosen with (see sim/RESULTS.md)
 ```
+
+## Leverage Box
+
+**The idea.** Perps make you pick a side, so they need market makers or a pool to take the other one. Here the side and the leverage come out of a box. Because the draw leans towards whichever side is lighter, longs and shorts stay close to balanced on their own, and a round can settle purely between its players. A rare high-leverage ticket takes a bigger share of what the losers lose, so it is the prize of the box.
+
+**A round.**
+
+1. Deposit USDC once on Solana. The same transaction delegates your player account to the rollup and registers a session key that lives in your browser.
+2. Open boxes. Each one is a transaction in the rollup signed by the session key: no wallet prompt, no fee, confirmed in tens of milliseconds. MagicBlock VRF draws the leverage tier (500x to 10,000x) and the side.
+3. The first box starts a 15 second countdown. Then the round locks at the oracle price, runs for 30 seconds and settles at the oracle price. Prices come from MagicBlock's Pyth Lazer feeds inside the rollup (SOL, BTC and ETH arenas exist).
+4. On the wrong side a ticket loses `stake × leverage × move`, at most its stake. On the right side it claims the same amount. The smaller of the two totals is what changes hands; each side shares it pro rata. Winners pay 10% of their winnings as the only fee.
+5. Cash out: the account is committed back to Solana and the balance is withdrawn from the vault.
+
+Leverage is a weight, not a promised multiple: winners can only receive what losers lost. The numbers are large because a round is 30 seconds and prices move a few hundredths of a percent in that time.
+
+**What it uses from MagicBlock.**
+
+| Piece | How it is used |
+| --- | --- |
+| Ephemeral Rollup | The `Arena` and `Player` accounts are delegated; boxes, locks, settlement and claims all run in the rollup. `leave` commits and undelegates the player. |
+| VRF (ephemeral queue) | `open_box` requests randomness in the rollup; `callback_box` assigns tier and side. On devnet the draw lands about 10 ms after the request. |
+| Pyth Lazer oracle | `tick` reads the feed account owned by MagicBlock's price program, checks owner, address and freshness, and uses it as the lock and settlement price. |
+| Gasless transactions | The session key and the crank key hold no SOL. Every open page moves rounds on and claims finished tickets in the background. |
+
+**Design notes.**
+
+- Settlement is O(1). The arena keeps stake per side and tier (10 buckets), so a round settles in one small instruction however many tickets it has, and stores three numbers per round. Tickets are priced lazily from that result when claimed.
+- Rounding always favours solvency: losers are rounded up, winners down. A unit test runs 20,000 random rounds and checks that payouts plus fees never exceed stakes and fall short only by dust.
+- USDC never leaves Solana. The vault is a token account on the base layer; the rollup only moves balances between delegated accounts, and the game is zero-sum, so the vault always covers them.
+- The session key can open boxes, claim and send the account home. It cannot withdraw: `withdraw` needs the owner's signature on Solana.
+
+**Proof on devnet.** Program `7YqLqC9wArnHb7aKcCRxkFMbKYE2gqQnExXtMyBdZ5Rv`. One player's full trip:
+
+| Step | Where | Transaction |
+| --- | --- | --- |
+| Deposit and delegate | Solana | [3DAQ7q…](https://explorer.solana.com/tx/3DAQ7qTdHSDTrUUWiATp9m3zr16YtPMeRqrLRuSMMZ6KDLM9yQ97qPFuxKi63U99GTS7ssNJK1zkUDBW2MgVQwmy?cluster=devnet) |
+| Open a box (session key, VRF request) | Rollup | [4aUdsh…](https://explorer.solana.com/tx/4aUdsh8XenvfKH5SymyL8mfVtVHvvynoWR5A3qpaMzvMbgXsYMHfm4JqvR2xQKecmBu2u4ibD6Rrg5wURjYnYHQ9?cluster=custom&customUrl=https%3A%2F%2Fdevnet-as.magicblock.app) |
+| VRF callback | Rollup | [Q47oGi…](https://explorer.solana.com/tx/Q47oGi2voBRBpZpJbb61GmTBrmqTstymp2KcsyfjZhAJkwfXJp4UaWwGsBwmaNrMArmkzu7fHBf3whxRCeuHXPs?cluster=custom&customUrl=https%3A%2F%2Fdevnet-as.magicblock.app) |
+| Claim | Rollup | [NrzWsr…](https://explorer.solana.com/tx/NrzWsr4Q1Lk9Kg14FyxHGFSXH5ZPqfty4NuQTjRaUk3pPMZvk4UEciHyroKNWT8wkCpnUbjhNXpXPVkeCBHDKvZ?cluster=custom&customUrl=https%3A%2F%2Fdevnet-as.magicblock.app) |
+| Leave (commit and undelegate) | Rollup | [6yzcYB…](https://explorer.solana.com/tx/6yzcYBwcbBAy734QhuZUSYCb4r7yMBRsVy6sj9o7ynYEZSpQ2TYQ9HKbE6fG1oVdXKEmWaw2rJitNx2kx6YexKY?cluster=custom&customUrl=https%3A%2F%2Fdevnet-as.magicblock.app) |
+| Undelegation lands | Solana | [2FEA5A…](https://explorer.solana.com/tx/2FEA5A9BdtK9DxK31Z6i558wjD1ZyksXBR38C2RGAVhSNVfH5B3QNgGSsuD14DHTCqbWU7J3u6Pt4W3DDa4xZWiQ?cluster=devnet) |
+| Withdraw | Solana | [222S28…](https://explorer.solana.com/tx/222S288emmGvFxKs3sV9PxfWAHsR9PWCTx4rqWijG5typ7auwHGPVvbmRkzDAbs716BSvY7Sd8cgHJ7YfTesV3MX?cluster=devnet) |
+
+**Run it.**
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+cargo test -p leverage-box            # settlement math, including the 20,000-round conservation check
+anchor build -p leverage_box
+cd tests && npm install
+npx tsx arena-admin.ts                # create, delegate and configure the SOL, BTC and ETH arenas
+npx tsx devnet-arena.ts 3             # two players, one full round across Solana and the rollup
+npx tsx arena-bot.ts 30 SOL           # a second player that keeps rounds going while you try the UI
+node record-demo.mjs                  # headless browser walkthrough of /arena; writes tests/shots/demo.mp4
+```
+
+**Limits, stated plainly.**
+
+- Devnet only, unaudited, test USDC.
+- The oracle in the rollup has crypto feeds only, so the arenas are SOL, BTC and ETH. Tokenized stocks need equity feeds there.
+- One pool mixes all leverage tiers, so low tiers have slightly negative expectation and high tiers positive: that is what makes a rare box worth pulling. Separate pools per risk class, ticket trading before the lock and a rolling jackpot are designed but not built.
+- A round with one player still runs; that player is on both sides and only pays the fee.
+- Rounds move on when someone's page (or the bot) sends `tick`. A scheduled crank in the rollup would remove that dependency and is not wired up.
+- Protocol fees accrue in the arena account; there is no instruction yet to pay them out.
+- The deposit, the session key and the 8-ticket limit are per wallet across all arenas. To add funds you cash out and deposit again.
+- The program has no integration test harness for the rollup; it is covered by unit tests and by the scripted runs against devnet above.
+- Random leveraged positions settled for money are likely to be regulated as derivatives or gambling in most places.
+
+# Gacha machines
 
 ## What you can do
 
-- **Machines.** The platform is a set of gacha machines. Each one has its own theme and stock basket and opens packs instantly: 10 USDC a pack, a guaranteed 7.50 USDC floor and seven tiers. Turbo mode opens ten packs with one random draw.
+- **Machines.** This part of the app is a set of gacha machines. Each one has its own theme and stock basket and opens packs instantly: 10 USDC a pack, a guaranteed 7.50 USDC floor and seven tiers. Turbo mode opens ten packs with one random draw.
 - **One shared prize pool.** Every machine pays into, and plays for, the same pool. The jackpot is half of it and any machine can hit it. It only pays while the pool is at least 2,000 USDC, so a jackpot is never smaller than 1,000 USDC; below the threshold a jackpot roll pays the best fixed tier the pool can afford. The pool starts from zero, so the top tiers only become payable once enough has been played (about 8,000 to 9,500 pulls in simulation). Anyone can add to the pool with `fund_pool`.
 - **Play to own.** Anyone can launch a machine for a 10 USDC fee, choosing its name, ticker, art and a stock basket from the whitelist. It is open for pulls right away. Each launchpad machine has a coin, and 3% of every pull buys that coin for the player who pulled; the coins arrive with the claim. The coin starts on a bonding curve; once 5,000 USDC has gone in it graduates and all of it becomes the coin's trading pool. Nothing from the coin goes to the prize pool.
 - **Where 10 USDC goes.** Launchpad machines: 7.50 floor, 1.80 prize pool, 0.30 buys the coin for the player, 0.10 creator, 0.30 protocol. Official machines have no coin and no creator: 7.50 floor, 2.10 prize pool, 0.40 protocol.

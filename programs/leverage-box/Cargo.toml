@@ -1,0 +1,26 @@
+[package]
+name = "leverage-box"
+version = "0.1.0"
+description = "Leverage Box: random leveraged positions settled between players, in real time on a MagicBlock Ephemeral Rollup"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "leverage_box"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "=0.31.1", features = ["init-if-needed"] }
+anchor-spl = "=0.31.1"
+ephemeral-rollups-sdk = { version = "0.16.2", features = ["anchor-compat"] }
+ephemeral-vrf-sdk = { version = "0.17.3", features = ["anchor-compat"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "allow" }

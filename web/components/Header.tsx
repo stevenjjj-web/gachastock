@@ -16,6 +16,7 @@ const WalletButton = dynamic(() => import("./WalletButton"), { ssr: false });
 
 const NAV: { key: Key; href: string; icon: string }[] = [
   { key: "nav.gacha", href: "/", icon: "M12 2 3 7v10l9 5 9-5V7zM3 7l9 5 9-5M12 12v10" },
+  { key: "nav.arena", href: "/arena", icon: "M13 2 4 14h7l-1 8 9-12h-7z" },
   { key: "nav.machines", href: "/machines", icon: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" },
   { key: "nav.launch", href: "/launch", icon: "M5 19c0-6 3-13 7-16 4 3 7 10 7 16l-3-2H8zM12 9v4" },
   { key: "nav.inventory", href: "/inventory", icon: "M3 7h18v4H3zM5 11v9h14v-9M10 15h4" },
