@@ -8,10 +8,8 @@
 
 Every draw comes from MagicBlock VRF. Leverage Box also runs in a MagicBlock Ephemeral Rollup, so each box confirms straight away, with no fee and no wallet prompt.
 
-[![GachaStock launch film](docs/demo-poster.jpg)](docs/demo.mp4)
-
 - **Live on devnet:** https://gachastock-bice.vercel.app (Leverage Box is at [`/arena`](https://gachastock-bice.vercel.app/arena))
-- **Demo video:** [`docs/demo.mp4`](docs/demo.mp4), a three-minute film of all three games, recorded in demo mode (see [Demo videos](#demo-videos)). [`docs/devnet-walkthrough.mp4`](docs/devnet-walkthrough.mp4) is a 90-second captioned run of Leverage Box and a gacha pull against devnet itself.
+- **Demo videos:** a three-minute film of all three games, recorded in demo mode, and a 90-second captioned run of Leverage Box and a gacha pull against devnet. They are not kept in this repository; [Demo videos](#demo-videos) explains how to record them.
 - **Built for** MagicBlock Solana Blitz v9. Devnet only, unaudited, test USDC.
 
 ## The games
@@ -118,7 +116,6 @@ programs/leverage-box  Anchor program for Leverage Box
 web                    Next.js frontend (demo mode by default, chain mode with the env set)
 sim                    Economic simulations the gacha parameters were chosen with
 tests                  LiteSVM tests, devnet scripts, browser end-to-end runs and the demo recorders
-docs                   Demo videos
 ```
 
 ## Frontend
@@ -238,8 +235,10 @@ node shots.mjs http://localhost:3210         # screenshot tour (needs the app in
 
 ## Demo videos
 
-- **`docs/demo.mp4`** is recorded by `tests/record-launch.mjs` from the app in demo mode (`node record-launch.mjs http://localhost:3210`, about 10 minutes, needs ffmpeg). It works in two passes. First it drives the real app in a browser, saves every frame the app paints with its timestamp, and logs a timeline of what the camera, cursor, captions and cards do. Then it renders the film frame by frame on `tests/film/stage.html` in parallel workers, so the output is smooth however slow the machine is. The score is synthesised by `tests/film/score.mjs`. Draws are random, so every take differs.
-- **`docs/devnet-walkthrough.mp4`** is recorded by `tests/record-demo.mjs` against devnet with the e2e wallet in `.keys/`, while `arena-bot.ts` plays the other side.
+Videos are not committed (`.gitignore` excludes them); both recorders write to `tests/shots/`.
+
+- **The launch film** is recorded by `tests/record-launch.mjs` from the app in demo mode (`node record-launch.mjs http://localhost:3210`, about 10 minutes, needs ffmpeg). It works in two passes. First it drives the real app in a browser, saves every frame the app paints with its timestamp, and logs a timeline of what the camera, cursor, captions and cards do. Then it renders the film frame by frame on `tests/film/stage.html` in parallel workers, so the output is smooth however slow the machine is. The score is synthesised by `tests/film/score.mjs`. Draws are random, so every take differs. Output: `tests/shots/launch.mp4`.
+- **The devnet walkthrough** is recorded by `tests/record-demo.mjs` against devnet with the e2e wallet in `.keys/`, while `arena-bot.ts` plays the other side. Output: `tests/shots/demo.mp4`.
 
 ## Limits and open work
 

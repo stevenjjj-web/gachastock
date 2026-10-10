@@ -22,11 +22,9 @@ Leverage Box runs in a MagicBlock Ephemeral Rollup. A round lasts 45 seconds and
 
 **Website.** https://gachastock-bice.vercel.app (Leverage Box is at `/arena`)
 
-**Demo.**
-- https://github.com/stevenjjj-web/gachastock/blob/main/docs/demo.mp4: a three-minute film of all three games, recorded in demo mode by `tests/record-launch.mjs`. In demo mode, Leverage Box uses the live oracle price and simulates the other players.
-- https://github.com/stevenjjj-web/gachastock/blob/main/docs/devnet-walkthrough.mp4: the same Leverage Box flow against devnet, with real rollup transactions (90 seconds, recorded by `tests/record-demo.mjs`).
-
-Upload both to a video host for links that play inline.
+**Demo.** The videos are not in the repository; upload them to a video host and paste the links here.
+- Launch film (about three minutes): all three games, recorded in demo mode by `tests/record-launch.mjs`. In demo mode, Leverage Box uses the live oracle price and simulates the other players. Link: _to add_
+- Devnet walkthrough (90 seconds): the same Leverage Box flow against devnet, with real rollup transactions, recorded by `tests/record-demo.mjs`. Link: _to add_
 
 **Program addresses (devnet).**
 

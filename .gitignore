@@ -10,3 +10,8 @@ test-ledger/
 tests/shots/
 sim/*.json
 sim/*.log
+
+# Videos and other recordings are kept out of the repository
+*.mp4
+*.webm
+*.mov
