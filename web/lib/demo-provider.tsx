@@ -146,6 +146,14 @@ function commit(next: Store) {
   listeners.forEach((l) => l());
 }
 
+/** Moves demo USDC into (positive) or out of (negative) the demo wallet, for the Leverage Box demo. */
+export function demoTransfer(amount: number) {
+  const s = structuredClone(getStore());
+  if (s.usdc + amount < 0) throw new GachaError("err.insufficient");
+  s.usdc += amount;
+  commit(s);
+}
+
 /** Clones the store and hands back the machine to work on. */
 function edit(machineId: string) {
   const s = structuredClone(getStore());

@@ -197,7 +197,7 @@ export const zh: Dict = {
   "nav.arena": "竞技场",
   "arena.title": "杠杆盲盒",
   "arena.sub": "开一个盒子，获得一个对实时价格的随机杠杆仓位，不到一分钟就与其他玩家结算。运行在 MagicBlock Ephemeral Rollup 上：即时、零手续费，游玩时没有钱包弹窗。",
-  "arena.chainOnly": "杠杆盲盒运行在 devnet 上。设置程序 ID 后，本应用将切换到链上模式。",
+  "arena.demoNote": "演示模式：价格是实时的，读取自 MagicBlock Ephemeral Rollup 中的预言机。盒子、轮次和其他玩家都在你的浏览器里模拟。",
   "arena.round": "第 {n} 轮",
   "arena.waiting": "等待第一个盒子",
   "arena.open": "盒子开放中",

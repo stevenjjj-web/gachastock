@@ -8,6 +8,23 @@ const L = BOX_TIERS.map((t) => BigInt(t.leverage));
 const ceilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b;
 const min = (a: bigint, b: bigint) => (a < b ? a : b);
 
+/** The leverage tier a random roll draws. */
+export function pickTier(roll: number): number {
+  let acc = 0;
+  for (let i = 0; i < BOX_TIERS.length; i++) {
+    acc += BOX_TIERS[i].ppm;
+    if (roll % 1_000_000 < acc) return i;
+  }
+  return 0;
+}
+
+/** The side for a new ticket of leverage-weighted stake `w`: the lighter side is more likely. */
+export function pickLong(roll: number, wLong: bigint, wShort: bigint, w: bigint): boolean {
+  const total = wLong + wShort + w;
+  if (total === 0n) return roll % 2 === 0;
+  return BigInt(roll) % PPM < ((wShort + w / 2n) * PPM) / total;
+}
+
 /** Price move in parts per million, signed. */
 export function returnPpm(start: number, end: number): number {
   if (start <= 0) return 0;

@@ -6,7 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ARENA, ASSETS, BOX_TIERS, DEPOSITS, STAKES, type Asset } from "@/lib/arena/config";
 import { payout, returnPpm, settle, weights } from "@/lib/arena/math";
-import { useArena, type ArenaState, type Ticket } from "@/lib/arena/use-arena";
+import { useArena, type ArenaApi, type ArenaState, type Ticket } from "@/lib/arena/use-arena";
+import { useDemoArena } from "@/lib/arena/use-demo-arena";
 import { IS_CHAIN_MODE, PPM, USDC } from "@/lib/config";
 import { usd } from "@/lib/format";
 import { useGacha } from "@/lib/gacha-context";
@@ -212,7 +213,7 @@ function Reveal({ ticket, onDone }: { ticket: Ticket; onDone: () => void }) {
   );
 }
 
-function Play({ arena, price, api }: { arena: ArenaState | null; price: number; api: ReturnType<typeof useArena> }) {
+function Play({ arena, price, api }: { arena: ArenaState | null; price: number; api: ArenaApi }) {
   const g = useGacha();
   const { t, err } = useI18n();
   const [stake, setStake] = useState(STAKES[1]);
@@ -383,12 +384,16 @@ function Play({ arena, price, api }: { arena: ArenaState | null; price: number; 
   );
 }
 
-function Arena() {
+// Chain mode talks to devnet and the rollup. Demo mode reads the live price from the rollup and
+// simulates the rest in the browser, since it has no wallet to sign with.
+const useArenaApi = IS_CHAIN_MODE ? useArena : useDemoArena;
+
+export function ArenaView() {
   const { t } = useI18n();
   const router = useRouter();
   const params = useSearchParams();
   const asset = ASSETS.find((a) => a.symbol === params.get("a")) ?? ASSETS[0];
-  const api = useArena(asset.feedId);
+  const api = useArenaApi(asset.feedId);
 
   return (
     <>
@@ -396,6 +401,7 @@ function Arena() {
         <div>
           <h1 className="text-3xl font-bold">{t("arena.title")}</h1>
           <p className="mt-1 max-w-3xl text-subtle">{t("arena.sub")}</p>
+          {!IS_CHAIN_MODE && <p className="mt-2 max-w-3xl text-sm text-subtle">{t("arena.demoNote")}</p>}
         </div>
         <div className="flex gap-2" role="radiogroup">
           {ASSETS.map((a) => (
@@ -412,18 +418,4 @@ function Arena() {
       </div>
     </>
   );
-}
-
-export function ArenaView() {
-  const { t } = useI18n();
-  // The arena talks to devnet and the rollup directly, so it needs the wallet providers of chain mode
-  if (!IS_CHAIN_MODE) {
-    return (
-      <>
-        <h1 className="text-3xl font-bold">{t("arena.title")}</h1>
-        <p className="panel mt-6 p-12 text-center text-subtle">{t("arena.chainOnly")}</p>
-      </>
-    );
-  }
-  return <Arena />;
 }

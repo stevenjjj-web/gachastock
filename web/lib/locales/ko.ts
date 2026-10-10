@@ -197,7 +197,7 @@ export const ko: Dict = {
   "nav.arena": "아레나",
   "arena.title": "레버리지 박스",
   "arena.sub": "박스를 열면 실시간 가격에 대한 무작위 레버리지 포지션을 받고, 1분 안에 다른 플레이어와 정산해요. MagicBlock Ephemeral Rollup에서 돌아가서 즉시 처리되고, 수수료도 없고, 플레이 중 지갑 팝업도 없어요.",
-  "arena.chainOnly": "레버리지 박스는 devnet에서 실행돼요. 프로그램 ID를 설정하면 이 앱이 체인 모드로 전환돼요.",
+  "arena.demoNote": "데모 모드: 가격은 MagicBlock Ephemeral Rollup의 오라클에서 읽은 실시간 가격이에요. 박스, 라운드, 다른 플레이어는 브라우저에서 시뮬레이션돼요.",
   "arena.round": "라운드 {n}",
   "arena.waiting": "첫 박스를 기다리는 중",
   "arena.open": "박스 오픈 중",

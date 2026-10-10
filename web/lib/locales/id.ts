@@ -197,7 +197,7 @@ export const id: Dict = {
   "nav.arena": "Arena",
   "arena.title": "Leverage Box",
   "arena.sub": "Buka kotak, dapatkan posisi leverage acak pada harga live, lalu selesaikan melawan pemain lain dalam waktu kurang dari semenit. Berjalan di MagicBlock Ephemeral Rollup: instan, tanpa biaya, dan tanpa pop-up dompet selama kamu bermain.",
-  "arena.chainOnly": "Leverage Box berjalan di devnet. Atur id program untuk mengalihkan app ini ke mode on-chain.",
+  "arena.demoNote": "Mode demo: harganya live, dibaca dari oracle MagicBlock di Ephemeral Rollup. Kotak, ronde, dan pemain lain disimulasikan di browser kamu.",
   "arena.round": "Ronde {n}",
   "arena.waiting": "Menunggu kotak pertama",
   "arena.open": "Kotak dibuka",

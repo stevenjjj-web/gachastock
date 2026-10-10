@@ -195,7 +195,7 @@ export const en = {
   "nav.arena": "Arena",
   "arena.title": "Leverage Box",
   "arena.sub": "Open a box, get a random leveraged position on a live price, and settle against the other players in under a minute. It runs in a MagicBlock Ephemeral Rollup: instant, with no fees and no wallet pop-ups while you play.",
-  "arena.chainOnly": "Leverage Box runs on devnet. Set the program ids to switch this app to chain mode.",
+  "arena.demoNote": "Demo mode: the price is live, read from MagicBlock's oracle in the Ephemeral Rollup. Boxes, rounds and the other players are simulated in your browser.",
   "arena.round": "Round {n}",
   "arena.waiting": "Waiting for the first box",
   "arena.open": "Boxes open",

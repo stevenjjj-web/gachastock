@@ -197,7 +197,7 @@ export const ja: Dict = {
   "nav.arena": "アリーナ",
   "arena.title": "レバレッジボックス",
   "arena.sub": "ボックスを開くと、ライブ価格に対するランダムなレバレッジポジションが手に入り、1分以内に他のプレイヤーと精算されます。MagicBlock Ephemeral Rollup 上で動くので、即時・手数料なし、プレイ中のウォレットポップアップもありません。",
-  "arena.chainOnly": "レバレッジボックスは devnet で動作します。プログラム ID を設定すると、このアプリがチェーンモードに切り替わります。",
+  "arena.demoNote": "デモモード：価格は MagicBlock の Ephemeral Rollup 内のオラクルから読み取ったリアルタイム価格です。ボックス、ラウンド、ほかのプレイヤーはブラウザ内でシミュレートされます。",
   "arena.round": "ラウンド {n}",
   "arena.waiting": "最初のボックスを待っています",
   "arena.open": "ボックス受付中",

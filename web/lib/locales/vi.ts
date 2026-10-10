@@ -197,7 +197,7 @@ export const vi: Dict = {
   "nav.arena": "Đấu trường",
   "arena.title": "Leverage Box",
   "arena.sub": "Mở một hộp, nhận vị thế đòn bẩy ngẫu nhiên trên giá trực tiếp và tất toán với những người chơi khác trong chưa đầy một phút. Chạy trên MagicBlock Ephemeral Rollup: tức thì, không phí và không có cửa sổ ví bật lên khi bạn chơi.",
-  "arena.chainOnly": "Leverage Box chạy trên devnet. Đặt các id chương trình để chuyển ứng dụng này sang chế độ on-chain.",
+  "arena.demoNote": "Chế độ demo: giá là giá trực tiếp, đọc từ oracle của MagicBlock trong Ephemeral Rollup. Hộp, vòng chơi và những người chơi khác được mô phỏng trong trình duyệt của bạn.",
   "arena.round": "Vòng {n}",
   "arena.waiting": "Đang chờ hộp đầu tiên",
   "arena.open": "Đang mở hộp",

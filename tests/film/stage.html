@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>GachaStock · launch film</title>
+<!-- The stage for record-launch.mjs. Pass 1 records the app and a timeline of what the camera,
+     cursor and captions do; pass 2 loads that timeline here and renders each frame of the film as
+     a pure function of time (window.film.render), so the output is smooth however slow the
+     machine is. Nothing in here animates on its own. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=block" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #f3efe6;
+    --ink: #1b1a17;
+    --muted: #6f6b61;
+    --faint: #a39e92;
+    --clay: #c8643b;
+    --gold: #ffc72c;
+    --serif: "Newsreader", Georgia, serif;
+    --sans: "Inter", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--paper); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+  body { position: relative; }
+
+  /* Paper: a warm wash and a little grain */
+  #bg { position: absolute; inset: 0; background:
+      radial-gradient(1200px 800px at 50% 38%, #fbf8f1 0%, rgba(251, 248, 241, 0) 70%),
+      radial-gradient(900px 700px at 88% 100%, rgba(200, 100, 59, 0.07), rgba(200, 100, 59, 0) 70%),
+      radial-gradient(900px 700px at 8% 0%, rgba(255, 199, 44, 0.08), rgba(255, 199, 44, 0) 70%),
+      var(--paper); }
+  #grain { position: absolute; inset: 0; opacity: 0.32; mix-blend-mode: multiply; pointer-events: none; z-index: 60;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .4  0 0 0 0 .33  0 0 0 .09 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>"); }
+
+  /* The app window and the camera that moves it */
+  #camera { position: absolute; left: 0; top: 0; width: 1440px; height: 940px; transform-origin: 0 0; z-index: 10; }
+  #window { position: absolute; inset: 0; border-radius: 16px; overflow: hidden; background: #0a0c0a; opacity: 0;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 50px 140px -20px rgba(60, 40, 10, 0.35), 0 18px 40px -12px rgba(60, 40, 10, 0.25), 0 0 0 1px rgba(30, 25, 15, 0.12); }
+  #titlebar { height: 40px; display: flex; align-items: center; padding: 0 16px; gap: 8px; background: #151815; border-bottom: 1px solid #222722; position: relative; }
+  #titlebar i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  #titlebar .title { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; color: #9a9d92; font: 500 14px var(--sans); letter-spacing: 0.01em; }
+  #titlebar .title b { color: #e8e5da; font-weight: 600; }
+  #titlebar .badge { margin-left: auto; font: 600 11px var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: #9a9d92; border: 1px solid #2c312c; padding: 4px 9px; border-radius: 999px; }
+  #app { display: block; width: 1440px; height: 900px; background: #0a0c0a; }
+
+  /* Cursor and click ripples, in screen space */
+  #cursor { position: absolute; left: 0; top: 0; z-index: 40; width: 30px; height: 30px; opacity: 0; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35)); }
+  #cursor svg { transform-origin: 6px 4px; }
+  .ripple { position: absolute; z-index: 39; left: 0; top: 0; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; border: 3px solid rgba(255, 199, 44, 0.95); opacity: 0; }
+
+  /* Lower-third caption */
+  #caption { position: absolute; left: 50%; bottom: 46px; z-index: 30; opacity: 0; max-width: 1400px;
+    display: flex; align-items: center; gap: 16px; padding: 18px 30px 18px 22px; border-radius: 999px;
+    background: rgba(27, 26, 23, 0.92); color: #f6f2e8; box-shadow: 0 20px 60px -10px rgba(30, 20, 5, 0.45);
+    font: 500 29px/1.3 var(--sans); letter-spacing: -0.005em; white-space: nowrap; }
+  #caption .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--gold); flex: none; box-shadow: 0 0 0 5px rgba(255, 199, 44, 0.18); }
+
+  /* Chapter label and fine print, while the app is on screen */
+  #label { position: absolute; left: 48px; top: 40px; z-index: 30; display: flex; align-items: center; gap: 14px; opacity: 0; }
+  #label .n { font: 500 16px var(--mono); color: var(--clay); }
+  #label .t { font: 500 30px/1 var(--serif); color: var(--ink); letter-spacing: -0.01em; }
+  #footnote { position: absolute; right: 48px; top: 46px; z-index: 30; font: 500 15px var(--sans); color: var(--faint); opacity: 0; letter-spacing: 0.01em; }
+
+  /* Explainer beside the window */
+  #side { position: absolute; left: 1140px; top: 0; bottom: 0; width: 720px; z-index: 20; display: flex; flex-direction: column; justify-content: center; gap: 30px; }
+  #side h3 { font: 400 58px/1.05 var(--serif); letter-spacing: -0.02em; }
+  #side h3 em { font-style: italic; color: var(--clay); }
+  #side ol { list-style: none; display: flex; flex-direction: column; gap: 22px; }
+  #side li { display: grid; grid-template-columns: 40px 1fr; gap: 14px; font: 400 27px/1.35 var(--sans); color: var(--ink); }
+  #side li span { font: 500 17px/1.9 var(--mono); color: var(--clay); }
+  #side li b { font-weight: 600; }
+
+  /* Full-screen cards: title, chapters, diagram, outro */
+  #cards { position: absolute; inset: 0; z-index: 50; }
+  .card { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: var(--paper); }
+  .rise { opacity: 0; }
+
+  .eyebrow { font: 600 17px var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+  .eyebrow .sep { color: var(--clay); margin: 0 10px; }
+  .display { font: 400 128px/1.0 var(--serif); letter-spacing: -0.035em; color: var(--ink); }
+  .display em { font-style: italic; color: var(--clay); }
+  .lede { font: 400 34px/1.42 var(--sans); color: var(--muted); max-width: 1180px; letter-spacing: -0.01em; }
+  .lede b { color: var(--ink); font-weight: 600; }
+  .wordmark { display: flex; align-items: center; gap: 30px; font: 500 150px/1 var(--serif); letter-spacing: -0.04em; }
+  .pills { display: flex; gap: 16px; justify-content: center; }
+  .pill { display: inline-flex; align-items: center; gap: 12px; padding: 15px 26px; border-radius: 999px; background: #fffdf8; border: 1px solid rgba(27, 26, 23, 0.1); box-shadow: 0 10px 30px -14px rgba(60, 40, 10, 0.3); font: 500 26px var(--sans); }
+  .pill i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .chapno { font: 500 22px var(--mono); color: var(--clay); letter-spacing: 0.1em; }
+  .chapter { font: 400 150px/1 var(--serif); letter-spacing: -0.04em; }
+  .newbadge { display: inline-flex; align-items: center; gap: 10px; padding: 9px 18px; border-radius: 999px; background: var(--ink); color: #f6f2e8; font: 600 15px var(--sans); letter-spacing: 0.12em; text-transform: uppercase; }
+  .newbadge i { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); display: block; }
+  .stack { display: flex; flex-direction: column; align-items: center; gap: 30px; }
+  .fine { font: 500 18px var(--sans); color: var(--faint); letter-spacing: 0.01em; }
+  .mono { font: 500 30px var(--mono); color: var(--ink); letter-spacing: -0.01em; }
+
+  /* Architecture diagram */
+  .arch { display: grid; grid-template-columns: 1fr 210px 1fr; align-items: center; width: 1640px; margin-top: 6px; }
+  .lane { background: #fffdf8; border: 1px solid rgba(27, 26, 23, 0.1); border-radius: 30px; padding: 40px 46px; text-align: left; box-shadow: 0 30px 70px -40px rgba(60, 40, 10, 0.45); }
+  .lane h4 { font: 400 54px/1 var(--serif); letter-spacing: -0.02em; margin-bottom: 8px; }
+  .lane .sub { font: 600 15px var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 26px; }
+  .lane ul { list-style: none; display: flex; flex-direction: column; gap: 15px; }
+  .lane li { display: flex; align-items: center; gap: 16px; font: 500 28px var(--sans); }
+  .lane li i { width: 11px; height: 11px; border-radius: 3px; background: var(--clay); flex: none; }
+  .lane.er { background: var(--ink); color: #f6f2e8; }
+  .lane.er .sub { color: #a7a196; }
+  .lane.er li i { background: var(--gold); }
+  .wires { display: flex; flex-direction: column; gap: 50px; align-items: center; font: 600 15px var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+  .wire { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .stats { display: flex; gap: 20px; }
+  .stat { padding: 24px 32px; border-radius: 22px; background: rgba(27, 26, 23, 0.05); text-align: left; min-width: 300px; }
+  .stat b { display: block; font: 400 54px/1 var(--serif); letter-spacing: -0.02em; margin-bottom: 8px; }
+  .stat span { font: 500 20px var(--sans); color: var(--muted); }
+
+  .proof { display: grid; grid-template-columns: auto auto; gap: 26px 48px; text-align: left; align-items: baseline; padding: 44px 56px; border-radius: 30px; background: #fffdf8; border: 1px solid rgba(27, 26, 23, 0.1); box-shadow: 0 30px 70px -40px rgba(60, 40, 10, 0.45); }
+  .proof .k { font: 600 17px var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+</style>
+</head>
+<body>
+<div id="bg"></div>
+
+<div id="camera">
+  <div id="window">
+    <div id="titlebar">
+      <i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>
+      <div class="title"><b>GachaStock</b><span id="path">/</span></div>
+      <span class="badge">Demo mode</span>
+    </div>
+    <img id="app" alt="" />
+  </div>
+</div>
+
+<div id="side"></div>
+<div id="label"><span class="n"></span><span class="t"></span></div>
+<div id="footnote"></div>
+<div id="caption"><span class="dot"></span><span class="txt"></span></div>
+<div id="ripples"></div>
+<div id="cursor"><svg width="30" height="30" viewBox="0 0 30 30"><path d="M5 3 L5 24 L10.5 18.8 L14.6 27.4 L18.4 25.7 L14.4 17.3 L22 17.1 Z" fill="#fff" stroke="#111" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+<div id="cards"></div>
+<div id="grain"></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const clamp01 = (x) => Math.min(1, Math.max(0, x));
+  const mix = (a, b, k) => a + (b - a) * k;
+
+  // CSS-style cubic-bezier easing
+  function bezier(x1, y1, x2, y2) {
+    const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+    const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+    const sx = (t) => ((ax * t + bx) * t + cx) * t;
+    const sy = (t) => ((ay * t + by) * t + cy) * t;
+    return (x) => {
+      if (x <= 0) return 0;
+      if (x >= 1) return 1;
+      let lo = 0, hi = 1, t = x;
+      for (let i = 0; i < 40; i++) {
+        const v = sx(t);
+        if (Math.abs(v - x) < 1e-6) break;
+        if (v < x) lo = t; else hi = t;
+        t = (lo + hi) / 2;
+      }
+      return sy(t);
+    };
+  }
+  const EASE = bezier(0.65, 0, 0.35, 1);
+  const OUT = bezier(0.16, 1, 0.3, 1);
+  const CURSOR = bezier(0.3, 0, 0.15, 1);
+  const STD = bezier(0.25, 0.1, 0.25, 1);
+  const p = (t, t0, secs, ease = OUT) => ease(clamp01((t - t0) / secs));
+
+  const INITIAL = { tx: 960 - 720 * 0.84, ty: 558 - 470 * 0.84, s: 0.84 };
+  let TL = [];
+  const of = (kind) => TL.filter((e) => e.kind === kind);
+  let cams = [], cursors = [], cursorShows = [], clicks = [], captions = [], labels = [], notes = [], sides = [], wins = [], paths = [], cardEvents = [];
+  const cardEls = [];
+
+  /** Value of a chain of transitions, each starting from wherever the previous one was. */
+  function chain(events, t, init, target, secs, lerp, ease) {
+    let seg = null;
+    for (const e of events) {
+      if (e.t > t) break;
+      const from = seg ? at(seg, e.t) : init;
+      seg = { from, to: target(e, from), t: e.t, secs: secs(e) };
+    }
+    function at(s, time) {
+      const k = s.secs > 0 ? ease(clamp01((time - s.t) / s.secs)) : 1;
+      return lerp(s.from, s.to, k);
+    }
+    return seg ? at(seg, t) : init;
+  }
+  const lerpCam = (a, b, k) => ({ tx: mix(a.tx, b.tx, k), ty: mix(a.ty, b.ty, k), s: mix(a.s, b.s, k) });
+  const camAt = (t) => chain(cams, t, INITIAL, (e) => e.to, (e) => e.ms / 1000, lerpCam, EASE);
+  const fade = (events, t, secs, ease = STD) => chain(events, t, 0, (e) => (e.on ? 1 : 0), () => secs, mix, ease);
+  const cursorAt = (t) =>
+    chain(cursors, t, { x: 720, y: 1300 }, (e) => ({ x: e.x, y: e.y }), (e) => e.ms / 1000, (a, b, k) => ({ x: mix(a.x, b.x, k), y: mix(a.y, b.y, k) }), CURSOR);
+  const last = (events, t) => {
+    let i = -1;
+    for (let j = 0; j < events.length && events[j].t <= t; j++) i = j;
+    return i;
+  };
+  // Label and fine print get out of the way while the camera is close in
+  const zoomVis = (s) => 1 - clamp01((s - 0.9) / 0.08);
+
+  function renderWindow(t) {
+    const i = last(wins, t);
+    const el = $("window");
+    if (i < 0) return (el.style.opacity = "0");
+    const e = wins[i];
+    if (e.on) {
+      el.style.opacity = String(p(t, e.t, 0.9));
+      const k = p(t, e.t, 1.1);
+      el.style.transform = `translateY(${80 * (1 - k)}px) scale(${0.94 + 0.06 * k})`;
+    } else {
+      const k = p(t, e.t, 0.7);
+      el.style.opacity = String(1 - k);
+      el.style.transform = `translateY(${80 * k}px) scale(${1 - 0.06 * k})`;
+    }
+  }
+
+  function renderCaption(t) {
+    const el = $("caption"), txt = el.querySelector(".txt");
+    const i = last(captions, t);
+    if (i < 0) return (el.style.opacity = "0");
+    const e = captions[i];
+    const prev = i > 0 ? captions[i - 1] : null;
+    let op, y, text = e.text, textOp = 1;
+    if (!e.text) {
+      op = prev?.text ? 1 - p(t, e.t, 0.5) : 0;
+      y = 16 * p(t, e.t, 0.65);
+      text = prev?.text ?? "";
+    } else if (!prev?.text) {
+      op = p(t, e.t, 0.5);
+      y = 16 * (1 - p(t, e.t, 0.65));
+    } else {
+      op = 1;
+      y = 0;
+      const dt = t - e.t;
+      if (dt < 0.26) {
+        text = prev.text;
+        textOp = 1 - dt / 0.26;
+      } else textOp = clamp01((dt - 0.26) / 0.26);
+    }
+    el.style.opacity = String(op);
+    el.style.transform = `translate(-50%, ${y}px)`;
+    if (txt.textContent !== text) txt.textContent = text;
+    txt.style.opacity = String(textOp);
+  }
+
+  function renderLabels(t, s) {
+    const li = last(labels, t);
+    const lab = $("label");
+    if (li >= 0) {
+      const e = labels[li];
+      if (e.text) {
+        lab.querySelector(".n").textContent = e.n;
+        lab.querySelector(".t").textContent = e.text;
+      }
+    }
+    const lv = fade(labels.map((e) => ({ t: e.t, on: !!e.text })), t, 0.6, OUT);
+    lab.style.opacity = String(lv * zoomVis(s));
+    lab.style.transform = `translateY(${-8 * (1 - lv)}px)`;
+    const ni = last(notes, t);
+    const note = $("footnote");
+    if (ni >= 0 && notes[ni].text) note.textContent = notes[ni].text;
+    note.style.opacity = String(fade(notes.map((e) => ({ t: e.t, on: !!e.text })), t, 0.6) * zoomVis(s));
+  }
+
+  let sideShown = -1;
+  function renderSide(t) {
+    const el = $("side");
+    const i = last(sides, t);
+    if (i < 0) {
+      sideShown = -1;
+      return (el.innerHTML = "");
+    }
+    // The panel being shown, or the one fading out after a hide
+    const shown = sides[i].title ? i : i > 0 && sides[i - 1].title && t - sides[i].t < 0.6 ? i - 1 : -1;
+    if (shown < 0) {
+      sideShown = -1;
+      return (el.innerHTML = "");
+    }
+    const e = sides[shown];
+    if (sideShown !== shown) {
+      el.innerHTML = `<h3>${e.title}</h3><ol>${e.lines.map((l, j) => `<li><span>0${j + 1}</span><div>${l}</div></li>`).join("")}</ol>`;
+      sideShown = shown;
+    }
+    const items = [el.querySelector("h3"), ...el.querySelectorAll("li")];
+    items.forEach((it, j) => {
+      const start = e.t + (j === 0 ? 0.05 : 0.75 + (j - 1) * (e.gap / 1000));
+      let op = p(t, start, 0.9), y = 26 * (1 - p(t, start, 1.1)), blur = 10 * (1 - p(t, start, 0.9));
+      if (shown !== i) {
+        const k = clamp01((t - sides[i].t) / 0.5);
+        op *= 1 - k;
+        y = -10 * k;
+        blur = 6 * k;
+      }
+      it.style.opacity = String(op);
+      it.style.transform = `translateY(${y}px)`;
+      it.style.filter = blur > 0.05 ? `blur(${blur}px)` : "none";
+    });
+  }
+
+  function renderCards(t) {
+    cardEvents.forEach((e, j) => {
+      const el = cardEls[j];
+      if (!el) return;
+      const tOn = e.t + (e.after ? 0.45 : 0.03);
+      const next = e.next;
+      const tOut = next ? next.t : Infinity;
+      // A card replaced by another stays until the new one's paper is fully opaque
+      const gone = next ? tOut + 1.25 : Infinity;
+      if (t < e.t || t >= gone) {
+        el.style.display = "none";
+        return;
+      }
+      el.style.display = "flex";
+      let bg = EASE(clamp01((t - tOn) / 0.7));
+      if (next && next.kind === "cardOut") bg *= 1 - EASE(clamp01((t - tOut - 0.25) / 0.7));
+      el.style.opacity = String(bg);
+      el.querySelectorAll(".rise").forEach((r, k) => {
+        const d = (r.dataset.d !== undefined ? Number(r.dataset.d) : 200 + k * 220) / 1000;
+        const s0 = tOn + d;
+        let op = p(t, s0, 0.9), y = 26 * (1 - p(t, s0, 1.1)), blur = 10 * (1 - p(t, s0, 0.9));
+        if (t >= tOut) {
+          const k2 = p(t, tOut, 0.5);
+          const o0 = p(tOut, s0, 0.9), y0 = 26 * (1 - p(tOut, s0, 1.1)), b0 = 10 * (1 - p(tOut, s0, 0.9));
+          op = mix(o0, 0, k2);
+          y = mix(y0, -14, k2);
+          blur = mix(b0, 8, k2);
+        }
+        r.style.opacity = String(op);
+        r.style.transform = `translateY(${y}px)`;
+        r.style.filter = blur > 0.05 ? `blur(${blur}px)` : "none";
+      });
+      el.querySelectorAll("[data-draw]").forEach((path) => {
+        path.style.strokeDasharray = "200";
+        path.style.strokeDashoffset = String(200 * (1 - EASE(clamp01((t - tOn - 0.9) / 1.4))));
+      });
+    });
+  }
+
+  function renderCursor(t, cam) {
+    const c = cursorAt(t);
+    const [x, y] = [cam.tx + c.x * cam.s, cam.ty + c.y * cam.s];
+    const el = $("cursor");
+    el.style.opacity = String(fade(cursorShows, t, 0.3));
+    el.style.transform = `translate(${x - 5}px, ${y - 3}px)`;
+    let scale = 1;
+    const ci = last(clicks, t);
+    if (ci >= 0) {
+      const dt = t - clicks[ci].t;
+      if (dt < 0.13) scale = 1 - 0.18 * EASE(clamp01(dt / 0.14));
+      else if (dt < 0.3) scale = 1 - 0.18 * EASE(clamp01(0.13 / 0.14)) * (1 - EASE(clamp01((dt - 0.13) / 0.14)));
+    }
+    el.querySelector("svg").style.transform = `scale(${scale})`;
+    // Ripples where recent clicks landed
+    const box = $("ripples");
+    const live = clicks.filter((k) => t >= k.t && t - k.t < 0.75);
+    while (box.children.length < live.length) box.appendChild(Object.assign(document.createElement("div"), { className: "ripple" }));
+    [...box.children].forEach((r, j) => {
+      const k = live[j];
+      if (!k) return (r.style.opacity = "0");
+      const kc = camAt(k.t), kp = cursorAt(k.t);
+      const prog = OUT(clamp01((t - k.t) / 0.7));
+      r.style.left = `${kc.tx + kp.x * kc.s}px`;
+      r.style.top = `${kc.ty + kp.y * kc.s}px`;
+      r.style.transform = `scale(${0.2 + 1.2 * prog})`;
+      r.style.opacity = String(1 - prog);
+    });
+  }
+
+  window.film = {
+    setTimeline(events) {
+      TL = events;
+      cams = of("cam");
+      cursors = of("cursor");
+      cursorShows = of("cursorShow");
+      clicks = of("click");
+      captions = of("caption");
+      labels = of("label");
+      notes = of("footnote");
+      sides = of("side");
+      wins = of("window");
+      paths = of("path");
+      cardEvents = TL.filter((e) => e.kind === "card" || e.kind === "cardOut");
+      cardEvents.forEach((e, j) => {
+        e.next = cardEvents[j + 1] ?? null;
+        e.after = j > 0 && cardEvents[j - 1].kind === "card";
+      });
+      $("cards").innerHTML = "";
+      cardEls.length = 0;
+      for (const e of cardEvents) {
+        if (e.kind !== "card") {
+          cardEls.push(null);
+          continue;
+        }
+        const el = document.createElement("section");
+        el.className = "card";
+        if (e.clear) el.style.background = "transparent";
+        el.innerHTML = e.html;
+        $("cards").appendChild(el);
+        cardEls.push(el);
+      }
+    },
+    /** Shows one captured frame of the app; resolves once it is decoded. */
+    async setFrame(src) {
+      const img = $("app");
+      img.src = src;
+      await img.decode();
+    },
+    render(t) {
+      const cam = camAt(t);
+      $("camera").style.transform = `translate(${cam.tx}px, ${cam.ty}px) scale(${cam.s})`;
+      renderWindow(t);
+      const pi = last(paths, t);
+      if (pi >= 0) $("path").textContent = paths[pi].path;
+      renderCaption(t);
+      renderLabels(t, cam.s);
+      renderSide(t);
+      renderCursor(t, cam);
+      renderCards(t);
+    },
+  };
+})();
+</script>
+</body>
+</html>

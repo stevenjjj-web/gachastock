@@ -22,7 +22,7 @@ The same app also has gacha machines for tokenized stocks drawn by MagicBlock VR
 
 **Website.** https://gachastock-bice.vercel.app/arena
 
-**Demo.** https://github.com/stevenjjj-web/gachastock/blob/main/docs/demo.mp4 (90 seconds, captioned, recorded against devnet by `tests/record-demo.mjs`). Upload it to a video host for a link that plays inline.
+**Demo.** https://github.com/stevenjjj-web/gachastock/blob/main/docs/demo.mp4: a three-minute launch film covering stock blind boxes, stock memes and Leverage Box, recorded in demo mode by `tests/record-launch.mjs` with Leverage Box on the live MagicBlock oracle price. The same Leverage Box flow against devnet itself, with real rollup transactions, is in https://github.com/stevenjjj-web/gachastock/blob/main/docs/devnet-walkthrough.mp4 (90 seconds, recorded by `tests/record-demo.mjs`). Upload them to a video host for links that play inline.
 
 **Program addresses (devnet).**
 

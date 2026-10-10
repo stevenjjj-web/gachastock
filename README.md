@@ -5,7 +5,11 @@ Two things you can do with 10 USDC on Solana, both settled between players and n
 - **Leverage Box** (new, for MagicBlock Solana Blitz v9): open a box, get a random leveraged long or short on a live price, and settle against the other players in under a minute. It runs in a **MagicBlock Ephemeral Rollup**: instant, no fees and no wallet pop-ups while you play.
 - **Gacha machines**: packs of tokenized US stocks with a guaranteed 7.50 USDC floor, one shared prize pool and a coin you earn by playing, drawn by **MagicBlock VRF** on Solana.
 
-Live on devnet: https://gachastock-bice.vercel.app (Leverage Box is at `/arena`). Demo video: [`docs/demo.mp4`](docs/demo.mp4), recorded against devnet by `tests/record-demo.mjs`.
+Live on devnet: https://gachastock-bice.vercel.app (Leverage Box is at `/arena`).
+
+[![GachaStock launch film](docs/demo-poster.jpg)](docs/demo.mp4)
+
+Demo video: [`docs/demo.mp4`](docs/demo.mp4), a three-minute launch film of all three ways to play: stock blind boxes, stock memes (launchpad machines and their coins) and Leverage Box. It is recorded in demo mode by `tests/record-launch.mjs`, with Leverage Box reading the live price from MagicBlock's rollup. [`docs/devnet-walkthrough.mp4`](docs/devnet-walkthrough.mp4) is the earlier captioned run of Leverage Box and a gacha pull against devnet itself, recorded by `tests/record-demo.mjs`.
 
 ```
 programs/leverage-box  Anchor program for Leverage Box (Ephemeral Rollup, VRF, Pyth Lazer oracle)
@@ -66,7 +70,8 @@ cd tests && npm install
 npx tsx arena-admin.ts                # create, delegate and configure the SOL, BTC and ETH arenas
 npx tsx devnet-arena.ts 3             # two players, one full round across Solana and the rollup
 npx tsx arena-bot.ts 30 SOL           # a second player that keeps rounds going while you try the UI
-node record-demo.mjs                  # headless browser walkthrough of /arena; writes tests/shots/demo.mp4
+node record-demo.mjs                  # headless browser walkthrough of /arena on devnet; writes tests/shots/demo.mp4
+node record-launch.mjs                # the launch film, from the app in demo mode; writes tests/shots/launch.mp4
 ```
 
 **Limits, stated plainly.**
@@ -87,7 +92,7 @@ node record-demo.mjs                  # headless browser walkthrough of /arena; 
 
 - **Machines.** This part of the app is a set of gacha machines. Each one has its own theme and stock basket and opens packs instantly: 10 USDC a pack, a guaranteed 7.50 USDC floor and seven tiers. Turbo mode opens ten packs with one random draw.
 - **One shared prize pool.** Every machine pays into, and plays for, the same pool. The jackpot is half of it and any machine can hit it. It only pays while the pool is at least 2,000 USDC, so a jackpot is never smaller than 1,000 USDC; below the threshold a jackpot roll pays the best fixed tier the pool can afford. The pool starts from zero, so the top tiers only become payable once enough has been played (about 8,000 to 9,500 pulls in simulation). Anyone can add to the pool with `fund_pool`.
-- **Play to own.** Anyone can launch a machine for a 10 USDC fee, choosing its name, ticker, art and a stock basket from the whitelist. It is open for pulls right away. Each launchpad machine has a coin, and 3% of every pull buys that coin for the player who pulled; the coins arrive with the claim. The coin starts on a bonding curve; once 5,000 USDC has gone in it graduates and all of it becomes the coin's trading pool. Nothing from the coin goes to the prize pool.
+- **Play to own (stock memes).** Anyone can launch a machine for a 10 USDC fee, choosing its name, ticker, art and a stock basket from the whitelist. It is open for pulls right away. Each launchpad machine has a coin, and 3% of every pull buys that coin for the player who pulled; the coins arrive with the claim. The coin starts on a bonding curve; once 5,000 USDC has gone in it graduates and all of it becomes the coin's trading pool. Nothing from the coin goes to the prize pool.
 - **Where 10 USDC goes.** Launchpad machines: 7.50 floor, 1.80 prize pool, 0.30 buys the coin for the player, 0.10 creator, 0.30 protocol. Official machines have no coin and no creator: 7.50 floor, 2.10 prize pool, 0.40 protocol.
 - **Leaderboard.** The Machines page ranks every machine by volume and shows its pulls, coin price, coin liquidity and how much coin its pulls have bought for players.
 
@@ -102,6 +107,7 @@ cd web && npm install && npm run dev
 Dark, app-style layout with four pages: **Gacha** (`/`, pick a machine, open packs, trade its coin), **Machines** (`/machines`, the leaderboard), **Launchpad** (`/launch`) and **Inventory** (`/inventory`).
 
 Without `NEXT_PUBLIC_PROGRAM_ID` the app runs in **demo mode**: draws happen in the browser with the same rules as the program, state lives in localStorage, and no real funds are involved. The machines, their stats and the recent openings you see on first load are seeded sample data.
+Leverage Box works in demo mode too. Its price is the live Pyth Lazer feed, read from MagicBlock's devnet rollup without a wallet; boxes, rounds, settlement and the other players are simulated in the browser with the program's math (`web/lib/arena/use-demo-arena.ts`), and the first five rounds in its history are sample data. If the rollup cannot be reached, the price falls back to a random walk.
 Fill in `web/.env.example` (or uncomment the program id in `web/.env.local`) to switch to chain mode.
 
 The public devnet RPC rate-limits aggressively. Chain mode batches its reads, but for anything beyond a quick test point `NEXT_PUBLIC_RPC_URL` at a dedicated endpoint.
@@ -176,6 +182,7 @@ node browser-e2e.mjs                         # devnet, in headless Chrome: conne
 node browser-e2e.mjs --launch                # also launch a machine, play it, graduate its coin, sell, withdraw
 node browser-e2e.mjs --inventory             # claim whatever is waiting in Inventory
 node shots.mjs http://localhost:3210         # screenshot tour (needs the app in demo mode)
+node record-launch.mjs http://localhost:3210 # the launch film (needs the app in demo mode, ffmpeg); about 10 minutes
 ```
 
 `tests/fixtures` holds the VRF program and oracle queue account dumped from devnet. The LiteSVM test runs with

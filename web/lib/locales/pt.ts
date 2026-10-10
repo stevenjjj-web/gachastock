@@ -197,7 +197,7 @@ export const pt: Dict = {
   "nav.arena": "Arena",
   "arena.title": "Leverage Box",
   "arena.sub": "Abra uma caixa, receba uma posição alavancada aleatória sobre um preço ao vivo e liquide contra os outros jogadores em menos de um minuto. Roda em um MagicBlock Ephemeral Rollup: instantâneo, sem taxas e sem pop-ups da carteira enquanto você joga.",
-  "arena.chainOnly": "O Leverage Box roda na devnet. Defina os ids do programa para mudar este app para o modo on-chain.",
+  "arena.demoNote": "Modo demo: o preço é ao vivo, lido do oráculo da MagicBlock no Ephemeral Rollup. As caixas, as rodadas e os outros jogadores são simulados no seu navegador.",
   "arena.round": "Rodada {n}",
   "arena.waiting": "Aguardando a primeira caixa",
   "arena.open": "Caixas abertas",

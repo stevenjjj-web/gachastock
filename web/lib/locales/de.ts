@@ -197,7 +197,7 @@ export const de: Dict = {
   "nav.arena": "Arena",
   "arena.title": "Leverage Box",
   "arena.sub": "Öffne eine Box, erhalte eine zufällige gehebelte Position auf einen Live-Preis und rechne in unter einer Minute gegen die anderen Spieler ab. Läuft auf einem MagicBlock Ephemeral Rollup: sofort, ohne Gebühren und ohne Wallet-Pop-ups, während du spielst.",
-  "arena.chainOnly": "Leverage Box läuft im Devnet. Setze die Programm-IDs, um diese App in den Chain-Modus zu schalten.",
+  "arena.demoNote": "Demo-Modus: Der Preis ist live und kommt vom MagicBlock-Orakel im Ephemeral Rollup. Boxen, Runden und die anderen Spieler werden in deinem Browser simuliert.",
   "arena.round": "Runde {n}",
   "arena.waiting": "Warte auf die erste Box",
   "arena.open": "Boxen offen",

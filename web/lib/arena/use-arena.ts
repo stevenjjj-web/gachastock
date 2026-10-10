@@ -406,3 +406,5 @@ export function useArena(feedId: number) {
 
   return { arena, price, samples, player, where, results, connected: !!owner, enter, openBox, cashOut };
 }
+
+export type ArenaApi = ReturnType<typeof useArena>;
